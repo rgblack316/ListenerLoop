@@ -252,15 +252,15 @@ Each phase is done only when its acceptance criteria pass.
 
 ### Phase 1: MVP
 
-- [ ] Project scaffold: Fastify, TypeScript, SQLite migrations, Docker Compose with Caddy.
-- [ ] Show and site-key management (seeded or CLI first).
-- [ ] Embed loader, modal and recorder iframe with Turnstile.
-- [ ] Upload endpoint with validation, ffprobe check and ffmpeg MP3 conversion.
-- [ ] Storage adapters: `local` and `s3`.
-- [ ] Admin login, inbox list and audio playback.
-- [ ] Email alert through SMTP or Resend.
+- [x] Project scaffold: Fastify, TypeScript, SQLite migrations, Docker Compose with Caddy.
+- [x] Show and site-key management (seeded or CLI first).
+- [x] Embed loader, modal and recorder iframe with Turnstile.
+- [x] Upload endpoint with validation, ffprobe check and ffmpeg MP3 conversion.
+- [x] Storage adapters: `local` and `s3`.
+- [x] Admin login, inbox list and audio playback.
+- [x] Email alert through SMTP or Resend.
 
-**Acceptance:** a message recorded on Chrome desktop, Android Chrome and iOS Safari through an embed on a test page appears in the inbox as a playable MP3 and triggers an email, using both storage drivers.
+**Acceptance (automated parts verified in headless Chromium with a fake microphone; real iOS Safari, Android Chrome, a live Turnstile key, S3 and email sends still to be checked by hand):** a message recorded on Chrome desktop, Android Chrome and iOS Safari through an embed on a test page appears in the inbox as a playable MP3 and triggers an email, using both storage drivers.
 
 ### Phase 2: Hardening
 
@@ -304,3 +304,11 @@ Each phase is done only when its acceptance criteria pass.
 **Open questions**
 
 - Reply feature details: which address replies are sent from, and whether replies are stored with the message.
+
+## Build notes (Phase 1)
+
+- `messages` also has `read_at` and `error` columns; shows can hold an encrypted per-show Turnstile secret override (AES-256-GCM keyed from `SESSION_SECRET`).
+- Storage drivers expose `put`, `getStream` (with range), `size`, `exists`, `delete` and an optional `getSignedUrl`. S3 playback redirects to a signed URL; local streams with HTTP Range.
+- Security already in Phase 1: ffprobe container-format allowlist and `-protocol_whitelist file` for ffmpeg, a per-IP hourly limit, Origin check on submissions, Turnstile hostname check, CSRF tokens and a strict CSP on the admin.
+- Extra settings: `DATA_DIR`, `TRUST_PROXY`, `LOG_LEVEL`, `S3_FORCE_PATH_STYLE`, `FFMPEG_PATH`, `FFPROBE_PATH` (see `.env.example`).
+- The Docker image build has not been run yet (no Docker daemon was available while building).

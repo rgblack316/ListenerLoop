@@ -1,0 +1,109 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import Database from 'better-sqlite3';
+
+export type DB = Database.Database;
+
+interface Migration {
+  id: number;
+  name: string;
+  sql: string;
+}
+
+/** Append-only. Never edit a migration that has shipped; add a new one. */
+const MIGRATIONS: Migration[] = [
+  {
+    id: 1,
+    name: 'initial schema',
+    sql: `
+      CREATE TABLE shows (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        slug TEXT NOT NULL UNIQUE,
+        site_key TEXT NOT NULL UNIQUE,
+        allowed_origins TEXT NOT NULL DEFAULT '[]',
+        notify_email TEXT,
+        max_seconds INTEGER NOT NULL DEFAULT 180,
+        ask_email INTEGER NOT NULL DEFAULT 1,
+        consent_text TEXT NOT NULL DEFAULT 'By sending this message you agree that it may be played on the show.',
+        button_label TEXT NOT NULL DEFAULT 'Leave a voicemail',
+        accent_color TEXT NOT NULL DEFAULT '#21649E',
+        prompt_text TEXT NOT NULL DEFAULT 'Record a message for the show.',
+        thanks_text TEXT NOT NULL DEFAULT 'Thank you! Your message was sent.',
+        retain_original INTEGER NOT NULL DEFAULT 0,
+        turnstile_site_key TEXT,
+        turnstile_secret_key TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY,
+        show_id TEXT NOT NULL REFERENCES shows(id) ON DELETE CASCADE,
+        status TEXT NOT NULL CHECK (status IN ('processing', 'ready', 'failed')),
+        starred INTEGER NOT NULL DEFAULT 0,
+        archived INTEGER NOT NULL DEFAULT 0,
+        sender_name TEXT NOT NULL,
+        sender_email TEXT,
+        consent_given INTEGER NOT NULL DEFAULT 0,
+        duration_seconds REAL,
+        mp3_key TEXT,
+        original_key TEXT,
+        size_bytes INTEGER,
+        original_mime TEXT,
+        ip_hash TEXT,
+        user_agent TEXT,
+        transcript TEXT,
+        notes TEXT,
+        error TEXT,
+        read_at TEXT,
+        created_at TEXT NOT NULL,
+        deleted_at TEXT
+      );
+      CREATE INDEX idx_messages_show_created ON messages(show_id, created_at);
+      CREATE INDEX idx_messages_created ON messages(created_at);
+      CREATE INDEX idx_messages_ip_created ON messages(ip_hash, created_at);
+
+      CREATE TABLE admin (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE sessions (
+        token_hash TEXT PRIMARY KEY,
+        admin_id INTEGER NOT NULL REFERENCES admin(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+      );
+
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+    `,
+  },
+];
+
+export function migrate(db: DB): void {
+  db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)');
+  const applied = new Set(db.prepare('SELECT id FROM schema_migrations').all().map((r) => (r as { id: number }).id));
+  for (const m of MIGRATIONS) {
+    if (applied.has(m.id)) continue;
+    const run = db.transaction(() => {
+      db.exec(m.sql);
+      db.prepare('INSERT INTO schema_migrations (id, name, applied_at) VALUES (?, ?, ?)').run(m.id, m.name, new Date().toISOString());
+    });
+    run();
+  }
+}
+
+export function openDb(file: string): DB {
+  if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
+  const db = new Database(file);
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+  db.pragma('busy_timeout = 5000');
+  migrate(db);
+  return db;
+}

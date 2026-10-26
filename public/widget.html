@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Leave a voicemail</title>
+  <link rel="stylesheet" href="/static/widget.css">
+</head>
+<body>
+  <main class="card">
+    <header class="head">
+      <h1 id="show-name">Leave a voicemail</h1>
+      <button type="button" id="close" class="icon" aria-label="Close">&times;</button>
+    </header>
+
+    <div id="loading" class="note">Loading&hellip;</div>
+
+    <div id="unsupported" class="note error" role="alert" hidden>
+      This browser cannot record audio here. Try opening this page in Safari, Chrome or Firefox.
+    </div>
+
+    <div id="content" hidden>
+      <p id="prompt" class="prompt"></p>
+
+      <section class="recorder" aria-label="Recorder">
+        <div class="meter" aria-hidden="true"><div id="meter-bar" class="meter-bar"></div></div>
+        <div class="timer" aria-live="off"><span id="timer">0:00</span> / <span id="limit">3:00</span></div>
+        <div class="row">
+          <button type="button" id="btn-record" class="btn primary">Start recording</button>
+          <button type="button" id="btn-stop" class="btn danger" hidden>Stop</button>
+          <button type="button" id="btn-redo" class="btn" hidden>Record again</button>
+        </div>
+        <audio id="playback" controls hidden></audio>
+      </section>
+
+      <form id="form" novalidate>
+        <label class="field">
+          <span>Your name <span class="req">(required)</span></span>
+          <input id="name" type="text" maxlength="100" autocomplete="name" required>
+        </label>
+        <label class="field" id="email-field" hidden>
+          <span>Email <span class="opt">(optional)</span></span>
+          <input id="email" type="email" maxlength="254" autocomplete="email">
+          <small>Only share it if you would like a reply.</small>
+        </label>
+        <label class="check" id="consent-row" hidden>
+          <input id="consent" type="checkbox">
+          <span id="consent-text"></span>
+        </label>
+        <div id="turnstile" class="turnstile"></div>
+        <button type="submit" id="btn-send" class="btn primary wide" disabled>Send message</button>
+        <p id="error" class="note error" role="alert" hidden></p>
+        <p id="status" class="note" role="status" hidden></p>
+      </form>
+    </div>
+
+    <div id="done" hidden>
+      <p id="done-text" class="done"></p>
+      <button type="button" id="btn-close-done" class="btn primary wide">Close</button>
+    </div>
+  </main>
+  <script src="/static/widget.js"></script>
+</body>
+</html>

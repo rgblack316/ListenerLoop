@@ -8,7 +8,7 @@
 
 ListenerLoop is a self-hosted, open-source widget that lets listeners record a voice message from any podcast website. It replaces services like SpeakPipe. One installation serves many shows, and every message lands in a private admin inbox as an MP3.
 
-> **Status:** planning. No code has been written yet. See [PLAN.md](PLAN.md) for the full plan and progress checklist.
+> **Status:** Phase 1 (MVP) is built and tested in headless Chromium. It has not yet been tried on real iOS Safari or Android devices, with a live Turnstile key, or against live S3 and email services. See [PLAN.md](PLAN.md) for the plan and progress checklist.
 
 ## Goals
 
@@ -33,7 +33,32 @@ ListenerLoop is a self-hosted, open-source widget that lets listeners record a v
 4. The server validates the upload, converts it to MP3, stores it, and emails the admin.
 5. The admin listens and manages messages in the dashboard.
 
-## Planned stack
+## Quick start (Ubuntu Server, Docker Compose)
+
+```bash
+git clone https://github.com/rgblack316/ListenerLoop.git && cd ListenerLoop
+cp .env.example .env        # set APP_URL, APP_DOMAIN, SESSION_SECRET, Turnstile, storage, mail
+docker compose up -d --build
+
+# create the admin login, then add your first show
+docker compose exec app node dist/cli.js create-admin you@example.com
+docker compose exec app node dist/cli.js add-show --name "My Podcast" --origin https://mypodcast.com
+```
+
+`add-show` prints the show's site key. Paste the embed snippet into the podcast site:
+
+```html
+<script src="https://YOUR-APP-DOMAIN/embed.js" data-site-key="SITE_KEY" async></script>
+```
+
+Then sign in at `https://YOUR-APP-DOMAIN/admin`. Other CLI commands: `list-shows`, `set-origins`, `rotate-key`.
+
+- **Turnstile:** create one widget in Cloudflare listing only your app's hostname. Embedding sites need no key of their own.
+- **Behind a Cloudflare Tunnel:** run the app alone (see the comments in `docker-compose.yml`) and point the tunnel at port 3000. Keep `TRUST_PROXY=true`.
+- **Local development:** `npm install && npm run dev` (Node 22+, ffmpeg on the PATH). Use Cloudflare's dummy Turnstile keys from `.env.example`.
+- **Tests:** `npm test` (needs ffmpeg).
+
+## Stack
 
 | Area | Choice |
 | --- | --- |
@@ -49,7 +74,7 @@ ListenerLoop is a self-hosted, open-source widget that lets listeners record a v
 
 ## Roadmap
 
-1. **MVP:** recorder, upload, MP3 conversion, storage drivers, admin inbox, email alert.
+1. **MVP (built):** recorder, upload, MP3 conversion, storage drivers, admin inbox, email alert.
 2. **Hardening:** rate limits, origin allowlist, upload fallback, backups, in-app browser testing.
 3. **Quality of life:** star, archive, search, waveforms, optional transcription.
 4. **Later:** reply to listeners by email, multi-user admin, webhooks, Postgres, phone-in via Twilio.
