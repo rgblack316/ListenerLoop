@@ -117,7 +117,7 @@ Five tables for v1, plus `schema_migrations`. IDs are ULIDs; timestamps are UTC.
 **Notes**
 
 - IP addresses are stored only as a salted hash, used for rate-limit review, never in plain text.
-- Deletion is soft (`deleted_at`). The purge job that removes the files and row after a grace period, and the `RETENTION_DAYS` setting it will use, are *(planned, Phase 2)*; today deleted messages are hidden but their files stay in storage.
+- Deleting a message in the admin removes its MP3, any original and the database row (including the sender's name and email) straight away. If storage is unreachable, the message is hidden and an hourly sweep (also run at startup) retries until the files are gone. There is no undo. Automatic deletion by age (`RETENTION_DAYS`) is *(planned, Phase 2)*.
 - Storage keys follow `shows/<show_id>/<yyyy>/<message_id>.mp3` (originals use `.orig`) so buckets stay browsable.
 
 ## Routes
@@ -213,7 +213,7 @@ Server-rendered pages, with htmx for small live updates such as starring or arch
 
 - A consent line is shown before recording, with configurable text per show.
 - The email field is shown by default but is always optional, with a note that it is only used to reply. The name field is always shown and required, so the podcaster knows who left a message before listening. Only the email field can be hidden per show.
-- Retention is configurable (for example, auto-delete after N days; *planned*), and listeners can be given a contact address to request removal.
+- Deleting is permanent, and retention will be configurable (for example, auto-delete after N days; *planned*), and listeners can be given a contact address to request removal.
 - Uploaded filenames and client metadata are never trusted or stored as paths.
 
 ## Notifications

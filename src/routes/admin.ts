@@ -9,6 +9,7 @@ import {
   type AdminSession,
 } from '../auth.js';
 import type { AppContext } from '../context.js';
+import { purgeMessage } from '../process.js';
 import {
   INBOX_FILTERS,
   normalizeOrigin,
@@ -217,10 +218,12 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.post(
     '/shows/:slug/messages/:id/delete',
-    mutating((req, reply, session) => {
+    mutating(async (req, reply, session) => {
       const m = messageFor(req, session);
       if (!m) return notFound(reply);
+      // Hide it at once, then remove the audio and the record; a failed removal is retried by the hourly sweep.
       repo.updateMessage(m.id, { deleted_at: new Date().toISOString() });
+      await purgeMessage(ctx, m);
       if (isHtmx(req)) return reply.type('text/html; charset=utf-8').send('');
       return reply.redirect(`/shows/${m.show_slug}`);
     }),

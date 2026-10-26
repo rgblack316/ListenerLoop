@@ -147,3 +147,27 @@ export function recoverInterrupted(ctx: AppContext): number {
   }
   return requeued;
 }
+
+/**
+ * Permanently removes one deleted message: its audio (MP3 and original), any leftover upload,
+ * and the database row, which also erases the sender's name and email. If storage cannot be
+ * reached the row is kept, so the next sweep retries.
+ */
+export async function purgeMessage(ctx: AppContext, m: { id: string; mp3_key: string | null; original_key: string | null }): Promise<boolean> {
+  try {
+    for (const key of [m.mp3_key, m.original_key]) if (key) await ctx.storage.delete(key);
+    await fs.promises.rm(uploadPath(ctx, m.id), { force: true });
+    ctx.repo.purgeMessage(m.id);
+    return true;
+  } catch (err) {
+    ctx.log.error({ err, messageId: m.id }, 'could not remove a deleted message from storage; will retry');
+    return false;
+  }
+}
+
+/** Removes every message that was deleted in the admin. Returns how many were purged. */
+export async function purgeDeleted(ctx: AppContext): Promise<number> {
+  let purged = 0;
+  for (const m of ctx.repo.listDeleted()) if (await purgeMessage(ctx, m)) purged++;
+  return purged;
+}

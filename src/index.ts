@@ -1,7 +1,7 @@
 import './env.js';
 import { buildApp } from './app.js';
 import { ConfigError, loadConfig } from './config.js';
-import { recoverInterrupted } from './process.js';
+import { purgeDeleted, recoverInterrupted } from './process.js';
 
 async function main(): Promise<void> {
   let config;
@@ -27,8 +27,17 @@ async function main(): Promise<void> {
   const requeued = recoverInterrupted(ctx);
   if (requeued > 0) app.log.info({ requeued }, 'requeued interrupted uploads');
 
+  const purgeAndLog = (): void => {
+    void purgeDeleted(ctx).then((n) => {
+      if (n > 0) app.log.info({ purged: n }, 'removed deleted messages from storage');
+    });
+  };
+  purgeAndLog();
   ctx.repo.deleteExpiredSessions();
-  const sweep = setInterval(() => ctx.repo.deleteExpiredSessions(), 60 * 60 * 1000);
+  const sweep = setInterval(() => {
+    ctx.repo.deleteExpiredSessions();
+    purgeAndLog();
+  }, 60 * 60 * 1000);
   sweep.unref();
 
   let stopping = false;

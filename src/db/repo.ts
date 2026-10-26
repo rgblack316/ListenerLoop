@@ -240,6 +240,15 @@ export class Repo {
     return this.db.prepare("SELECT * FROM messages WHERE status = 'processing' AND deleted_at IS NULL ORDER BY created_at").all() as Message[];
   }
 
+  /** Messages the admin deleted whose audio and record have not been removed yet. */
+  listDeleted(): Message[] {
+    return this.db.prepare('SELECT * FROM messages WHERE deleted_at IS NOT NULL').all() as Message[];
+  }
+
+  purgeMessage(id: string): void {
+    this.db.prepare('DELETE FROM messages WHERE id = ?').run(id);
+  }
+
   // ---- admin + sessions ----
   getAdmin(): { id: number; email: string; password_hash: string } | undefined {
     return this.db.prepare('SELECT id, email, password_hash FROM admin WHERE id = 1').get() as

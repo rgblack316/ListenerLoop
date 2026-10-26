@@ -15,6 +15,7 @@ import {
   type Harness,
 } from './helpers.js';
 import type { Show } from '../src/db/repo.js';
+import { purgeDeleted } from '../src/process.js';
 
 const ffmpeg = hasFfmpeg();
 
@@ -384,8 +385,13 @@ describe.skipIf(!ffmpeg)('admin: inbox, playback and actions', () => {
     expect(restore.statusCode).toBe(302);
     expect((await get('/inbox')).body).toContain('Carol');
 
+    const carolKey = h.ctx.repo.getMessage(ids[2]!)!.mp3_key!;
+    expect(await h.ctx.storage.exists(carolKey)).toBe(true);
     const del = await formPost(h, `${msgUrl(2)}/delete`, session, {}, { 'hx-request': 'true' });
     expect(del.statusCode).toBe(200);
+    // Deleting removes the audio from storage and erases the record, including the sender's details.
+    expect(await h.ctx.storage.exists(carolKey)).toBe(false);
+    expect(h.ctx.repo.db.prepare('SELECT COUNT(*) AS n FROM messages WHERE id = ?').get(ids[2]!)).toEqual({ n: 0 });
     expect((await get('/inbox?filter=all')).body).not.toContain('Carol');
     expect((await get(`${msgUrl(2)}`)).statusCode).toBe(404);
     expect((await get(`${msgUrl(2)}/audio`)).statusCode).toBe(404);
@@ -396,6 +402,20 @@ describe.skipIf(!ffmpeg)('admin: inbox, playback and actions', () => {
     expect(res.statusCode).toBe(302);
     const page = await get(`${msgUrl(0)}`);
     expect(page.body).toContain('Great question for episode 12');
+  });
+
+  it('sweeps up messages that were only hidden before, and retries after a storage failure', async () => {
+    const m = h.ctx.repo.getMessage(ids[1]!)!;
+    h.ctx.repo.updateMessage(m.id, { deleted_at: new Date().toISOString() });
+    const real = h.ctx.storage.delete.bind(h.ctx.storage);
+    h.ctx.storage.delete = async () => { throw new Error('storage offline'); };
+    expect(await purgeDeleted(h.ctx)).toBe(0);
+    expect(await h.ctx.storage.exists(m.mp3_key!)).toBe(true);
+    expect(h.ctx.repo.listDeleted()).toHaveLength(1);
+    h.ctx.storage.delete = real;
+    expect(await purgeDeleted(h.ctx)).toBe(1);
+    expect(await h.ctx.storage.exists(m.mp3_key!)).toBe(false);
+    expect(h.ctx.repo.listDeleted()).toHaveLength(0);
   });
 
   it('shows a failed message with its reason', async () => {
