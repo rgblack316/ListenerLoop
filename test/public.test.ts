@@ -109,7 +109,7 @@ describe.skipIf(!ffmpeg)('public API and processing pipeline', () => {
     expect(h.sent).toHaveLength(1);
     expect(h.sent[0]!.to).toBe('randy@example.com');
     expect(h.sent[0]!.subject).toContain('Pat Listener');
-    expect(h.sent[0]!.text).toContain(`/admin/messages/${id}`);
+    expect(h.sent[0]!.text).toMatch(new RegExp(`/shows/[a-z0-9-]+/messages/${id}`));
     expect(tmpFiles()).toEqual([]);
   });
 

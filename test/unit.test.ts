@@ -198,11 +198,11 @@ describe('email', () => {
       senderName: 'Pat',
       senderEmail: null,
       durationSeconds: 75,
-      adminUrl: 'https://listenerloop.app/admin/messages/abc',
+      adminUrl: 'https://listenerloop.app/shows/randy/messages/abc',
     });
     expect(m.subject).toBe('New voicemail from Pat (Randy Unscripted)');
     expect(m.text).toContain('Length: 1:15');
     expect(m.text).toContain('Email: not shared');
-    expect(m.text).toContain('https://listenerloop.app/admin/messages/abc');
+    expect(m.text).toContain('https://listenerloop.app/shows/randy/messages/abc');
   });
 });

@@ -51,7 +51,7 @@ docker compose exec app node dist/cli.js add-show --name "My Podcast" --origin h
 <script src="https://YOUR-APP-DOMAIN/embed.js" data-site-key="SITE_KEY" async></script>
 ```
 
-Then sign in at `https://YOUR-APP-DOMAIN/admin`. Other CLI commands: `list-shows`, `set-origins`, `rotate-key`.
+Then sign in at `https://YOUR-APP-DOMAIN/login`. Each show has its own inbox at `/shows/<slug>` (for example `/shows/bible-bytes`), and `/inbox` combines all of them. Other CLI commands: `list-shows`, `set-origins`, `rotate-key`.
 
 - **Turnstile:** create one widget in Cloudflare listing only your app's hostname. Embedding sites need no key of their own.
 - **Behind a Cloudflare Tunnel:** run the app alone (see the comments in `docker-compose.yml`) and point the tunnel at port 3000. Keep `TRUST_PROXY=true`.

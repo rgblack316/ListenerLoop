@@ -257,7 +257,7 @@ Each phase is done only when its acceptance criteria pass.
 - [x] Embed loader, modal and recorder iframe with Turnstile.
 - [x] Upload endpoint with validation, ffprobe check and ffmpeg MP3 conversion.
 - [x] Storage adapters: `local` and `s3`.
-- [x] Admin login, inbox list and audio playback.
+- [x] Admin login, per-show inboxes (`/shows/<slug>`), combined inbox and audio playback.
 - [x] Email alert through SMTP or Resend.
 
 **Acceptance (automated parts verified in headless Chromium with a fake microphone; real iOS Safari, Android Chrome, a live Turnstile key, S3 and email sends still to be checked by hand):** a message recorded on Chrome desktop, Android Chrome and iOS Safari through an embed on a test page appears in the inbox as a playable MP3 and triggers an email, using both storage drivers.
@@ -312,3 +312,5 @@ Each phase is done only when its acceptance criteria pass.
 - Security already in Phase 1: ffprobe container-format allowlist and `-protocol_whitelist file` for ffmpeg, a per-IP hourly limit, Origin check on submissions, Turnstile hostname check, CSRF tokens and a strict CSP on the admin.
 - Extra settings: `DATA_DIR`, `TRUST_PROXY`, `LOG_LEVEL`, `S3_FORCE_PATH_STYLE`, `FFMPEG_PATH`, `FFPROBE_PATH` (see `.env.example`).
 - The Docker image build has not been run yet (no Docker daemon was available while building).
+- Admin URLs have no `/admin` prefix: `/login`, `/` (your shows with unread counts; one show goes straight to its inbox), `/inbox` (all shows), `/shows/<slug>` (a show's inbox), `/shows/<slug>/messages/<id>`, `/shows/<slug>/settings`, `/shows/new`. A message opened under the wrong show's URL returns 404.
+- Multi-user later: add `users` and `user_shows` tables and narrow `accessibleShows()` in `src/routes/admin.ts`. Every show, inbox, message and audio route already goes through it.

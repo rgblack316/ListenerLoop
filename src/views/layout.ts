@@ -1,6 +1,6 @@
 import { esc, html, raw, type Raw } from '../lib/html.js';
 
-export type NavKey = 'inbox' | 'shows';
+export type NavKey = 'home' | 'inbox' | 'shows';
 
 export interface LayoutOptions {
   title: string;
@@ -14,10 +14,10 @@ export function layout(opts: LayoutOptions): string {
   const headers = opts.csrf ? JSON.stringify({ 'x-csrf-token': opts.csrf }) : '';
   const nav = opts.csrf
     ? html`<nav class="nav" aria-label="Main">
-        <a class="brand" href="/admin/inbox"><img src="/static/brand/ListenerLoop-original-gradient.svg" alt="" width="28" height="28"> ListenerLoop</a>
-        <a href="/admin/inbox" ${opts.nav === 'inbox' ? raw('aria-current="page"') : ''}>Inbox</a>
-        <a href="/admin/shows" ${opts.nav === 'shows' ? raw('aria-current="page"') : ''}>Shows</a>
-        <form method="post" action="/admin/logout" class="inline">
+        <a class="brand" href="/"><img src="/static/brand/ListenerLoop-original-gradient.svg" alt="" width="28" height="28"> ListenerLoop</a>
+        <a href="/inbox" ${opts.nav === 'inbox' ? raw('aria-current="page"') : ''}>Inbox</a>
+        <a href="/shows" ${opts.nav === 'shows' ? raw('aria-current="page"') : ''}>Shows</a>
+        <form method="post" action="/logout" class="inline">
           <input type="hidden" name="_csrf" value="${opts.csrf}">
           <button type="submit" class="link">Sign out</button>
         </form>

@@ -13,12 +13,13 @@ import {
   INBOX_FILTERS,
   normalizeOrigin,
   parseOriginList,
+  RESERVED_SLUGS,
   showOrigins,
   type InboxFilter,
   type Show,
 } from '../db/repo.js';
 import { cleanText, encryptSecret, isValidEmail, parseRange, randomToken, safeFilePart, slugify } from '../lib/util.js';
-import { inboxPage, loginPage, messagePage, messageRow, showFormPage, showsPage, type ShowFormValues } from '../views/pages.js';
+import { homePage, inboxPage, loginPage, messagePage, messageRow, showFormPage, showsPage, type ShowFormValues } from '../views/pages.js';
 
 const PAGE_SIZE = 25;
 const MAX_SECONDS_LIMIT = 600;
@@ -74,7 +75,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
   /** Signed-in GET page. */
   const authed = (handler: Handler) => async (req: FastifyRequest, reply: FastifyReply) => {
     const session = getSession(ctx, req);
-    if (!session) return reply.redirect('/admin/login');
+    if (!session) return reply.redirect('/login');
     return handler(req, reply, session);
   };
 
@@ -91,14 +92,12 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
   const isHtmx = (req: FastifyRequest): boolean => req.headers['hx-request'] === 'true';
 
   // ---------------------------------------------------------------- auth
-  app.get('/admin', (_req, reply) => reply.redirect('/admin/inbox'));
-
-  app.get('/admin/login', (req, reply) => {
-    if (getSession(ctx, req)) return reply.redirect('/admin/inbox');
+  app.get('/login', (req, reply) => {
+    if (getSession(ctx, req)) return reply.redirect('/');
     return page(reply, loginPage());
   });
 
-  app.post('/admin/login', async (req, reply) => {
+  app.post('/login', async (req, reply) => {
     if (!sameOrigin(req)) return reply.code(403).type('text/plain').send('Forbidden');
     if (throttle.blocked(req.ip)) return page(reply, loginPage('Too many attempts. Please wait a few minutes and try again.'), 429);
     const email = field(req.body, 'email').trim().toLowerCase();
@@ -117,101 +116,130 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     }
     throttle.clear(req.ip);
     startSession(ctx, reply, admin.id);
-    return reply.redirect('/admin/inbox');
+    return reply.redirect('/');
   });
 
   app.post(
-    '/admin/logout',
+    '/logout',
     mutating((req, reply) => {
       endSession(ctx, req, reply);
-      return reply.redirect('/admin/login');
+      return reply.redirect('/login');
     }),
   );
 
-  // ---------------------------------------------------------------- inbox
+  // ---------------------------------------------------------------- home and inboxes
+  // Every show the signed-in user may open. Today the single admin sees all shows; when multi-user
+  // arrives, this is the one place that narrows the list, and every route below goes through it.
+  const accessibleShows = (_session: AdminSession): Show[] => repo.listShows();
+  const showFor = (req: FastifyRequest, session: AdminSession): Show | undefined => {
+    const { slug } = req.params as { slug: string };
+    return accessibleShows(session).find((s) => s.slug === slug);
+  };
+  const notFound = (reply: FastifyReply): FastifyReply => page(reply, '<p>Not found.</p>', 404);
+
   app.get(
-    '/admin/inbox',
-    authed((req, reply, session) => {
-      const q = req.query as { filter?: string; show?: string; page?: string };
-      const filter: InboxFilter = INBOX_FILTERS.includes(q.filter as InboxFilter) ? (q.filter as InboxFilter) : 'inbox';
-      const shows = repo.listShows();
-      const showId = q.show && shows.some((s) => s.id === q.show) ? q.show : undefined;
-      const total = repo.countMessages(filter, showId);
-      const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-      const pageNo = Math.min(Math.max(1, Number.parseInt(q.page ?? '1', 10) || 1), pages);
-      const messages = repo.listMessages(filter, { showId, limit: PAGE_SIZE, offset: (pageNo - 1) * PAGE_SIZE });
-      const counts = Object.fromEntries(INBOX_FILTERS.map((f) => [f, repo.countMessages(f, showId)])) as Record<InboxFilter, number>;
-      return page(reply, inboxPage({ csrf: session.csrf, messages, filter, showId, shows, counts, page: pageNo, pages, total }));
+    '/',
+    authed((_req, reply, session) => {
+      const shows = accessibleShows(session);
+      if (shows.length === 0) return reply.redirect('/shows/new');
+      if (shows.length === 1) return reply.redirect(`/shows/${shows[0]!.slug}`);
+      const summaries = shows.map((show) => ({
+        show,
+        unread: repo.countMessages('new', show.id),
+        total: repo.countMessages('inbox', show.id),
+      }));
+      return page(reply, homePage(summaries, repo.countMessages('new'), session.csrf));
     }),
   );
+
+  const renderInbox = (req: FastifyRequest, reply: FastifyReply, session: AdminSession, show?: Show): FastifyReply => {
+    const q = req.query as { filter?: string; page?: string };
+    const filter: InboxFilter = INBOX_FILTERS.includes(q.filter as InboxFilter) ? (q.filter as InboxFilter) : 'inbox';
+    const showId = show?.id;
+    const total = repo.countMessages(filter, showId);
+    const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const pageNo = Math.min(Math.max(1, Number.parseInt(q.page ?? '1', 10) || 1), pages);
+    const messages = repo.listMessages(filter, { showId, limit: PAGE_SIZE, offset: (pageNo - 1) * PAGE_SIZE });
+    const counts = Object.fromEntries(INBOX_FILTERS.map((f) => [f, repo.countMessages(f, showId)])) as Record<InboxFilter, number>;
+    return page(
+      reply,
+      inboxPage({ csrf: session.csrf, messages, filter, show, hasShows: accessibleShows(session).length > 0, counts, page: pageNo, pages, total }),
+    );
+  };
+
+  app.get('/inbox', authed((req, reply, session) => renderInbox(req, reply, session)));
 
   // ---------------------------------------------------------------- message
+  /** A message, only if it belongs to the show in the URL and that show is open to this user. */
+  const messageFor = (req: FastifyRequest, session: AdminSession) => {
+    const show = showFor(req, session);
+    const m = show ? repo.getMessage((req.params as { id: string }).id) : undefined;
+    return show && m && m.show_id === show.id ? m : undefined;
+  };
+  const here = (m: { show_slug: string; id: string }): string => `/shows/${m.show_slug}/messages/${m.id}`;
+
   app.get(
-    '/admin/messages/:id',
+    '/shows/:slug/messages/:id',
     authed((req, reply, session) => {
-      const { id } = req.params as { id: string };
-      const m = repo.getMessage(id);
-      if (!m) return page(reply, '<p>Message not found.</p>', 404);
-      if (m.status === 'ready' && !m.read_at) repo.updateMessage(id, { read_at: new Date().toISOString() });
+      const m = messageFor(req, session);
+      if (!m) return notFound(reply);
+      if (m.status === 'ready' && !m.read_at) repo.updateMessage(m.id, { read_at: new Date().toISOString() });
       const flash = FLASH[(req.query as { flash?: string }).flash ?? ''];
       return page(reply, messagePage(m, session.csrf, flash));
     }),
   );
 
-  const afterAction = (req: FastifyRequest, reply: FastifyReply, id: string, htmxBody: string): FastifyReply => {
+  const afterAction = (req: FastifyRequest, reply: FastifyReply, to: string, htmxBody: string): FastifyReply => {
     if (isHtmx(req)) return reply.type('text/html; charset=utf-8').send(htmxBody);
-    return reply.redirect(`/admin/messages/${id}?flash=saved`);
+    return reply.redirect(`${to}?flash=saved`);
   };
 
   app.post(
-    '/admin/messages/:id/star',
-    mutating((req, reply) => {
-      const { id } = req.params as { id: string };
-      const m = repo.getMessage(id);
-      if (!m) return reply.code(404).send('Not found');
-      repo.updateMessage(id, { starred: m.starred ? 0 : 1 });
-      return afterAction(req, reply, id, messageRow(repo.getMessage(id)!).toString());
+    '/shows/:slug/messages/:id/star',
+    mutating((req, reply, session) => {
+      const m = messageFor(req, session);
+      if (!m) return notFound(reply);
+      repo.updateMessage(m.id, { starred: m.starred ? 0 : 1 });
+      return afterAction(req, reply, here(m), messageRow(repo.getMessage(m.id)!).toString());
     }),
   );
 
   app.post(
-    '/admin/messages/:id/archive',
-    mutating((req, reply) => {
-      const { id } = req.params as { id: string };
-      const m = repo.getMessage(id);
-      if (!m) return reply.code(404).send('Not found');
-      repo.updateMessage(id, { archived: m.archived ? 0 : 1 });
+    '/shows/:slug/messages/:id/archive',
+    mutating((req, reply, session) => {
+      const m = messageFor(req, session);
+      if (!m) return notFound(reply);
+      repo.updateMessage(m.id, { archived: m.archived ? 0 : 1 });
       // In a list, the row leaves the current view; on the detail page we stay put.
-      return afterAction(req, reply, id, '');
+      return afterAction(req, reply, here(m), '');
     }),
   );
 
   app.post(
-    '/admin/messages/:id/delete',
-    mutating((req, reply) => {
-      const { id } = req.params as { id: string };
-      if (!repo.getMessage(id)) return reply.code(404).send('Not found');
-      repo.updateMessage(id, { deleted_at: new Date().toISOString() });
+    '/shows/:slug/messages/:id/delete',
+    mutating((req, reply, session) => {
+      const m = messageFor(req, session);
+      if (!m) return notFound(reply);
+      repo.updateMessage(m.id, { deleted_at: new Date().toISOString() });
       if (isHtmx(req)) return reply.type('text/html; charset=utf-8').send('');
-      return reply.redirect('/admin/inbox');
+      return reply.redirect(`/shows/${m.show_slug}`);
     }),
   );
 
   app.post(
-    '/admin/messages/:id/notes',
-    mutating((req, reply) => {
-      const { id } = req.params as { id: string };
-      if (!repo.getMessage(id)) return reply.code(404).send('Not found');
-      repo.updateMessage(id, { notes: field(req.body, 'notes').slice(0, 4000) || null });
-      return reply.redirect(`/admin/messages/${id}?flash=saved`);
+    '/shows/:slug/messages/:id/notes',
+    mutating((req, reply, session) => {
+      const m = messageFor(req, session);
+      if (!m) return notFound(reply);
+      repo.updateMessage(m.id, { notes: field(req.body, 'notes').slice(0, 4000) || null });
+      return reply.redirect(`${here(m)}?flash=saved`);
     }),
   );
 
   app.get(
-    '/admin/messages/:id/audio',
-    authed(async (req, reply) => {
-      const { id } = req.params as { id: string };
-      const m = repo.getMessage(id);
+    '/shows/:slug/messages/:id/audio',
+    authed(async (req, reply, session) => {
+      const m = messageFor(req, session);
       if (!m || m.status !== 'ready' || !m.mp3_key) return reply.code(404).type('text/plain').send('Not found');
       const download = (req.query as { download?: string }).download === '1';
       const filename = `${safeFilePart(m.show_slug)}-${safeFilePart(m.sender_name)}-${m.created_at.slice(0, 10)}.mp3`;
@@ -318,7 +346,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     if (existing) {
       slug = slugify(v.slug);
       const taken = repo.getShowBySlug(slug);
-      if (taken && taken.id !== existing.id) errors.push('That URL slug is already used by another show.');
+      if (RESERVED_SLUGS.includes(slug) || (taken && taken.id !== existing.id)) errors.push('That URL slug is already used by another show.');
     }
 
     const newSecret = field(body, 'turnstile_secret_key').trim();
@@ -359,22 +387,22 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
   };
 
   app.get(
-    '/admin/shows',
+    '/shows',
     authed((req, reply, session) => {
       const flash = FLASH[(req.query as { flash?: string }).flash ?? ''];
-      return page(reply, showsPage(repo.listShows(), config.appUrl, session.csrf, flash));
+      return page(reply, showsPage(accessibleShows(session), config.appUrl, session.csrf, flash));
     }),
   );
 
   app.get(
-    '/admin/shows/new',
+    '/shows/new',
     authed((_req, reply, session) =>
       page(reply, showFormPage({ csrf: session.csrf, show: null, values: blankValues(), errors: [], maxSecondsLimit: MAX_SECONDS_LIMIT })),
     ),
   );
 
   app.post(
-    '/admin/shows',
+    '/shows',
     mutating((req, reply, session) => {
       const values = valuesFromBody(req.body, blankValues());
       const { errors, fields } = parseShowForm(req.body, values, null);
@@ -382,41 +410,49 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
         return page(reply, showFormPage({ csrf: session.csrf, show: null, values, errors, maxSecondsLimit: MAX_SECONDS_LIMIT }), 400);
       }
       repo.createShow({ ...(fields as Omit<typeof fields, 'name'>), name: values.name });
-      return reply.redirect('/admin/shows?flash=created');
+      return reply.redirect('/shows?flash=created');
     }),
   );
 
   app.get(
-    '/admin/shows/:id',
+    '/shows/:slug',
     authed((req, reply, session) => {
-      const show = repo.getShow((req.params as { id: string }).id);
-      if (!show) return page(reply, '<p>Show not found.</p>', 404);
+      const show = showFor(req, session);
+      return show ? renderInbox(req, reply, session, show) : notFound(reply);
+    }),
+  );
+
+  app.get(
+    '/shows/:slug/settings',
+    authed((req, reply, session) => {
+      const show = showFor(req, session);
+      if (!show) return notFound(reply);
       return page(reply, showFormPage({ csrf: session.csrf, show, values: valuesFromShow(show), errors: [], maxSecondsLimit: MAX_SECONDS_LIMIT }));
     }),
   );
 
   app.post(
-    '/admin/shows/:id',
+    '/shows/:slug/settings',
     mutating((req, reply, session) => {
-      const show = repo.getShow((req.params as { id: string }).id);
-      if (!show) return page(reply, '<p>Show not found.</p>', 404);
+      const show = showFor(req, session);
+      if (!show) return notFound(reply);
       const values = valuesFromBody(req.body, valuesFromShow(show));
       const { errors, fields } = parseShowForm(req.body, values, show);
       if (errors.length) {
         return page(reply, showFormPage({ csrf: session.csrf, show, values, errors, maxSecondsLimit: MAX_SECONDS_LIMIT }), 400);
       }
       repo.updateShow(show.id, fields);
-      return reply.redirect('/admin/shows?flash=saved');
+      return reply.redirect('/shows?flash=saved');
     }),
   );
 
   app.post(
-    '/admin/shows/:id/rotate-key',
-    mutating((req, reply) => {
-      const show = repo.getShow((req.params as { id: string }).id);
-      if (!show) return reply.code(404).send('Not found');
+    '/shows/:slug/rotate-key',
+    mutating((req, reply, session) => {
+      const show = showFor(req, session);
+      if (!show) return notFound(reply);
       repo.rotateSiteKey(show.id);
-      return reply.redirect('/admin/shows?flash=rotated');
+      return reply.redirect('/shows?flash=rotated');
     }),
   );
 }

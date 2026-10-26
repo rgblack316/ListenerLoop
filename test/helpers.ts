@@ -146,13 +146,13 @@ export function csrfFromHtml(body: string): string {
 export async function login(h: Harness): Promise<{ cookie: string; csrf: string }> {
   const res = await h.app.inject({
     method: 'POST',
-    url: '/admin/login',
+    url: '/login',
     headers: { 'content-type': 'application/x-www-form-urlencoded', origin: APP_URL },
     payload: new URLSearchParams({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD }).toString(),
   });
   if (res.statusCode !== 302) throw new Error(`login failed with ${res.statusCode}`);
   const cookie = cookieFrom(res);
-  const inbox = await h.app.inject({ method: 'GET', url: '/admin/inbox', headers: { cookie } });
+  const inbox = await h.app.inject({ method: 'GET', url: '/inbox', headers: { cookie } });
   return { cookie, csrf: csrfFromHtml(inbox.body) };
 }
 

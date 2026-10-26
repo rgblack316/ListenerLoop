@@ -77,7 +77,6 @@ export async function buildApp(opts: BuildOptions): Promise<{ app: FastifyInstan
     return reply.code(status).type('text/plain').send(message);
   });
 
-  app.get('/', (_req, reply) => reply.redirect('/admin'));
   app.get('/healthz', (_req, reply) => {
     try {
       ctx.repo.db.prepare('SELECT 1').get();

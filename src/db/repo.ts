@@ -45,6 +45,9 @@ export interface Message {
   deleted_at: string | null;
 }
 
+/** Slugs that would clash with fixed paths under /shows. */
+export const RESERVED_SLUGS = ['new'];
+
 export type MessageWithShow = Message & { show_name: string; show_slug: string };
 
 export type InboxFilter = 'inbox' | 'new' | 'starred' | 'archived' | 'failed' | 'all';
@@ -104,7 +107,8 @@ export class Repo {
   }
 
   uniqueSlug(name: string): string {
-    const base = slugify(name);
+    let base = slugify(name);
+    if (RESERVED_SLUGS.includes(base)) base = `${base}-show`;
     let slug = base;
     for (let i = 2; this.getShowBySlug(slug); i++) slug = `${base}-${i}`;
     return slug;

@@ -125,7 +125,7 @@ export async function notifyNewMessage(ctx: AppContext, id: string): Promise<voi
         senderName: msg.sender_name,
         senderEmail: msg.sender_email,
         durationSeconds: msg.duration_seconds,
-        adminUrl: `${config.appUrl}/admin/messages/${msg.id}`,
+        adminUrl: `${config.appUrl}/shows/${msg.show_slug}/messages/${msg.id}`,
       }),
     );
   } catch (err) {

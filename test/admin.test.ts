@@ -28,17 +28,17 @@ describe('admin: access control', () => {
   });
 
   it('sends signed-out visitors to the login page', async () => {
-    for (const url of ['/admin/inbox', '/admin/shows', '/admin/shows/new', '/admin/messages/x', '/admin/messages/x/audio']) {
+    for (const url of ['/', '/inbox', '/shows', '/shows/new', '/shows/x', '/shows/x/settings', '/shows/x/messages/y', '/shows/x/messages/y/audio']) {
       const res = await h.app.inject({ method: 'GET', url });
       expect(res.statusCode, url).toBe(302);
-      expect(res.headers.location).toBe('/admin/login');
+      expect(res.headers.location).toBe('/login');
     }
-    const post = await h.app.inject({ method: 'POST', url: '/admin/shows', payload: 'name=x', headers: { 'content-type': 'application/x-www-form-urlencoded', origin: APP_URL } });
+    const post = await h.app.inject({ method: 'POST', url: '/shows', payload: 'name=x', headers: { 'content-type': 'application/x-www-form-urlencoded', origin: APP_URL } });
     expect(post.statusCode).toBe(302);
   });
 
   it('locks down the login page', async () => {
-    const res = await h.app.inject({ method: 'GET', url: '/admin/login' });
+    const res = await h.app.inject({ method: 'GET', url: '/login' });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'");
     expect(res.headers['content-security-policy']).toContain("script-src 'self'");
@@ -48,8 +48,8 @@ describe('admin: access control', () => {
   });
 
   it('rejects wrong credentials the same way for a wrong email or password', async () => {
-    const wrongPassword = await formPost(h, '/admin/login', { cookie: '' }, { email: ADMIN_EMAIL, password: 'nope nope nope nope' });
-    const wrongEmail = await formPost(h, '/admin/login', { cookie: '' }, { email: 'someone@else.test', password: ADMIN_PASSWORD });
+    const wrongPassword = await formPost(h, '/login', { cookie: '' }, { email: ADMIN_EMAIL, password: 'nope nope nope nope' });
+    const wrongEmail = await formPost(h, '/login', { cookie: '' }, { email: 'someone@else.test', password: ADMIN_PASSWORD });
     expect(wrongPassword.statusCode).toBe(401);
     expect(wrongEmail.statusCode).toBe(401);
     expect(wrongPassword.body).toContain('do not match');
@@ -58,26 +58,26 @@ describe('admin: access control', () => {
   });
 
   it('blocks logins that come from another origin', async () => {
-    const res = await formPost(h, '/admin/login', { cookie: '' }, { email: ADMIN_EMAIL, password: ADMIN_PASSWORD }, { origin: 'https://evil.example' });
+    const res = await formPost(h, '/login', { cookie: '' }, { email: ADMIN_EMAIL, password: ADMIN_PASSWORD }, { origin: 'https://evil.example' });
     expect(res.statusCode).toBe(403);
   });
 
   it('signs in with strict, HttpOnly, Secure cookies and signs out again', async () => {
-    const res = await formPost(h, '/admin/login', { cookie: '' }, { email: ADMIN_EMAIL.toUpperCase(), password: ADMIN_PASSWORD });
+    const res = await formPost(h, '/login', { cookie: '' }, { email: ADMIN_EMAIL.toUpperCase(), password: ADMIN_PASSWORD });
     expect(res.statusCode).toBe(302);
-    expect(res.headers.location).toBe('/admin/inbox');
+    expect(res.headers.location).toBe('/');
     const setCookie = String(res.headers['set-cookie']);
     expect(setCookie).toContain('HttpOnly');
     expect(setCookie).toContain('Secure');
     expect(setCookie).toContain('SameSite=Strict');
     const cookie = cookieFrom(res);
-    const inbox = await h.app.inject({ method: 'GET', url: '/admin/inbox', headers: { cookie } });
+    const inbox = await h.app.inject({ method: 'GET', url: '/inbox', headers: { cookie } });
     expect(inbox.statusCode).toBe(200);
 
     const session = await login(h);
-    const out = await formPost(h, '/admin/logout', session, {});
+    const out = await formPost(h, '/logout', session, {});
     expect(out.statusCode).toBe(302);
-    const after = await h.app.inject({ method: 'GET', url: '/admin/inbox', headers: { cookie: session.cookie } });
+    const after = await h.app.inject({ method: 'GET', url: '/inbox', headers: { cookie: session.cookie } });
     expect(after.statusCode).toBe(302);
   });
 
@@ -86,10 +86,10 @@ describe('admin: access control', () => {
     try {
       let last = 0;
       for (let i = 0; i < 10; i++) {
-        last = (await formPost(throttled, '/admin/login', { cookie: '' }, { email: ADMIN_EMAIL, password: `wrong password ${i}` })).statusCode;
+        last = (await formPost(throttled, '/login', { cookie: '' }, { email: ADMIN_EMAIL, password: `wrong password ${i}` })).statusCode;
       }
       expect(last).toBe(429);
-      const right = await formPost(throttled, '/admin/login', { cookie: '' }, { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+      const right = await formPost(throttled, '/login', { cookie: '' }, { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
       expect(right.statusCode).toBe(429);
     } finally {
       await throttled.close();
@@ -99,7 +99,7 @@ describe('admin: access control', () => {
   it('expires sessions', async () => {
     const session = await login(h);
     h.ctx.repo.db.prepare('UPDATE sessions SET expires_at = ?').run(new Date(Date.now() - 1000).toISOString());
-    const res = await h.app.inject({ method: 'GET', url: '/admin/inbox', headers: { cookie: session.cookie } });
+    const res = await h.app.inject({ method: 'GET', url: '/inbox', headers: { cookie: session.cookie } });
     expect(res.statusCode).toBe(302);
   });
 
@@ -122,14 +122,14 @@ describe('admin: shows', () => {
 
   it('requires a CSRF token and same-origin for changes', async () => {
     const fields = { name: 'No token' };
-    expect((await formPost(h, '/admin/shows', { cookie: session.cookie }, fields)).statusCode).toBe(403);
-    expect((await formPost(h, '/admin/shows', { ...session, csrf: 'x'.repeat(32) }, fields)).statusCode).toBe(403);
-    expect((await formPost(h, '/admin/shows', session, fields, { origin: 'https://evil.example' })).statusCode).toBe(403);
+    expect((await formPost(h, '/shows', { cookie: session.cookie }, fields)).statusCode).toBe(403);
+    expect((await formPost(h, '/shows', { ...session, csrf: 'x'.repeat(32) }, fields)).statusCode).toBe(403);
+    expect((await formPost(h, '/shows', session, fields, { origin: 'https://evil.example' })).statusCode).toBe(403);
     expect(h.ctx.repo.listShows()).toHaveLength(0);
   });
 
   it('validates the form and explains each problem', async () => {
-    const res = await formPost(h, '/admin/shows', session, {
+    const res = await formPost(h, '/shows', session, {
       name: '',
       allowed_origins: 'not a url, ftp://x.test',
       notify_email: 'nope',
@@ -145,7 +145,7 @@ describe('admin: shows', () => {
 
   let show: Show;
   it('creates a show with normalized origins and shows its embed code', async () => {
-    const res = await formPost(h, '/admin/shows', session, {
+    const res = await formPost(h, '/shows', session, {
       name: 'Randy Unscripted',
       allowed_origins: 'randyunscripted.com\nhttps://www.randyunscripted.com/about\nhttps://randyunscripted.com',
       notify_email: 'randy@example.com',
@@ -161,13 +161,13 @@ describe('admin: shows', () => {
     expect(JSON.parse(show.allowed_origins)).toEqual(['https://randyunscripted.com', 'https://www.randyunscripted.com']);
     expect(show.site_key).toMatch(/^pk_[\w-]{22}$/);
 
-    const page = await h.app.inject({ method: 'GET', url: '/admin/shows?flash=created', headers: { cookie: session.cookie } });
+    const page = await h.app.inject({ method: 'GET', url: '/shows?flash=created', headers: { cookie: session.cookie } });
     expect(page.body).toContain(`data-site-key=&quot;${show.site_key}&quot;`);
     expect(page.body).toContain(`${APP_URL}/embed.js`);
   });
 
   it('edits a show and keeps a Turnstile override encrypted', async () => {
-    const edit = await formPost(h, `/admin/shows/${show.id}`, session, {
+    const edit = await formPost(h, `/shows/${show.slug}/settings`, session, {
       name: 'Randy Unscripted',
       slug: 'randy',
       allowed_origins: 'https://randyunscripted.com',
@@ -179,13 +179,14 @@ describe('admin: shows', () => {
     });
     expect(edit.statusCode).toBe(302);
     const saved = h.ctx.repo.getShow(show.id)!;
+    show = saved;
     expect(saved.slug).toBe('randy');
     expect(saved.max_seconds).toBe(120);
     expect(saved.turnstile_site_key).toBe('0xSITE');
     expect(saved.turnstile_secret_key).toMatch(/^v1:/);
     expect(saved.turnstile_secret_key).not.toContain('SUPER-SECRET');
 
-    const form = await h.app.inject({ method: 'GET', url: `/admin/shows/${show.id}`, headers: { cookie: session.cookie } });
+    const form = await h.app.inject({ method: 'GET', url: `/shows/${show.slug}/settings`, headers: { cookie: session.cookie } });
     expect(form.body).not.toContain('SUPER-SECRET');
     expect(form.body).toContain('Leave blank to keep it');
 
@@ -193,29 +194,29 @@ describe('admin: shows', () => {
     expect(cfg.json().turnstileSiteKey).toBe('0xSITE');
 
     // Saving again without a secret keeps the stored one; unticking asks for both.
-    await formPost(h, `/admin/shows/${show.id}`, session, { name: 'Randy Unscripted', slug: 'randy', max_seconds: '120', accent_color: '#112233', turnstile_site_key: '0xSITE' });
+    await formPost(h, `/shows/${show.slug}/settings`, session, { name: 'Randy Unscripted', slug: 'randy', max_seconds: '120', accent_color: '#112233', turnstile_site_key: '0xSITE' });
     expect(h.ctx.repo.getShow(show.id)!.turnstile_secret_key).toBe(saved.turnstile_secret_key);
 
-    await formPost(h, `/admin/shows/${show.id}`, session, { name: 'Randy Unscripted', slug: 'randy', max_seconds: '120', accent_color: '#112233', clear_turnstile: '1' });
+    await formPost(h, `/shows/${show.slug}/settings`, session, { name: 'Randy Unscripted', slug: 'randy', max_seconds: '120', accent_color: '#112233', clear_turnstile: '1' });
     const cleared = h.ctx.repo.getShow(show.id)!;
     expect(cleared.turnstile_site_key).toBeNull();
     expect(cleared.turnstile_secret_key).toBeNull();
   });
 
   it('refuses a half-set override and duplicate slugs', async () => {
-    const half = await formPost(h, `/admin/shows/${show.id}`, session, { name: 'Randy', slug: 'randy', max_seconds: '120', accent_color: '#112233', turnstile_site_key: '0xONLY' });
+    const half = await formPost(h, `/shows/${show.slug}/settings`, session, { name: 'Randy', slug: 'randy', max_seconds: '120', accent_color: '#112233', turnstile_site_key: '0xONLY' });
     expect(half.statusCode).toBe(400);
     expect(half.body).toContain('both');
 
     h.ctx.repo.createShow({ name: 'Other Show' });
-    const dup = await formPost(h, `/admin/shows/${show.id}`, session, { name: 'Randy', slug: 'other-show', max_seconds: '120', accent_color: '#112233' });
+    const dup = await formPost(h, `/shows/${show.slug}/settings`, session, { name: 'Randy', slug: 'other-show', max_seconds: '120', accent_color: '#112233' });
     expect(dup.statusCode).toBe(400);
     expect(dup.body).toContain('already used');
   });
 
   it('rotates the site key', async () => {
     const before = h.ctx.repo.getShow(show.id)!.site_key;
-    const res = await formPost(h, `/admin/shows/${show.id}/rotate-key`, session, {});
+    const res = await formPost(h, `/shows/${show.slug}/rotate-key`, session, {});
     expect(res.statusCode).toBe(302);
     const after = h.ctx.repo.getShow(show.id)!.site_key;
     expect(after).not.toBe(before);
@@ -224,7 +225,7 @@ describe('admin: shows', () => {
 
   it('escapes show names in pages', async () => {
     h.ctx.repo.createShow({ name: '<img src=x onerror=alert(1)>' });
-    const res = await h.app.inject({ method: 'GET', url: '/admin/shows', headers: { cookie: session.cookie } });
+    const res = await h.app.inject({ method: 'GET', url: '/shows', headers: { cookie: session.cookie } });
     expect(res.body).not.toContain('<img src=x');
     expect(res.body).toContain('&lt;img src=x');
   });
@@ -234,12 +235,15 @@ describe.skipIf(!ffmpeg)('admin: inbox, playback and actions', () => {
   let h: Harness;
   let session: { cookie: string; csrf: string };
   let show: Show;
+  let other: Show;
   const ids: string[] = [];
+  const msgUrl = (i: number) => `/shows/${[show, show, other][i]!.slug}/messages/${ids[i]}`;
 
   beforeAll(async () => {
     h = await makeHarness();
     show = h.ctx.repo.createShow({ name: 'Randy Unscripted', allowed_origins: JSON.stringify(['https://randyunscripted.com']) });
-    const second = h.ctx.repo.createShow({ name: 'Other Show' });
+    other = h.ctx.repo.createShow({ name: 'Other Show' });
+    const second = other;
     const audio = makeAudio('webm-stream', 3);
     for (const [s, name] of [[show, 'Alice'], [show, 'Bob <script>'], [second, 'Carol']] as const) {
       const body = multipart({ key: s.site_key, name, email: 'x@example.com', consent: 'true', 'cf-turnstile-response': 'ok' }, { data: audio });
@@ -257,7 +261,7 @@ describe.skipIf(!ffmpeg)('admin: inbox, playback and actions', () => {
     h.app.inject({ method: 'GET', url, headers: { cookie: session.cookie, ...headers } });
 
   it('lists who left each message before anyone plays it', async () => {
-    const res = await get('/admin/inbox');
+    const res = await get('/inbox');
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('Alice');
     expect(res.body).toContain('Carol');
@@ -268,70 +272,95 @@ describe.skipIf(!ffmpeg)('admin: inbox, playback and actions', () => {
   });
 
   it('filters by show and by status', async () => {
-    const byShow = await get(`/admin/inbox?show=${show.id}`);
+    const byShow = await get(`/shows/${show.slug}`);
     expect(byShow.body).toContain('Alice');
     expect(byShow.body).not.toContain('Carol');
-    const failed = await get('/admin/inbox?filter=failed');
+    const failed = await get('/inbox?filter=failed');
     expect(failed.body).toContain('No messages here');
-    const junk = await get('/admin/inbox?filter=bogus&show=nope&page=-4');
+    const junk = await get('/inbox?filter=bogus&page=-4');
     expect(junk.statusCode).toBe(200);
   });
 
   it('marks a message read when opened', async () => {
     expect(h.ctx.repo.getMessage(ids[0]!)!.read_at).toBeNull();
-    const res = await get(`/admin/messages/${ids[0]}`);
+    const res = await get(`${msgUrl(0)}`);
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('Alice');
     expect(res.body).toContain('<audio controls');
     expect(res.body).toContain('x@example.com');
     expect(h.ctx.repo.getMessage(ids[0]!)!.read_at).toBeTruthy();
-    const news = await get('/admin/inbox?filter=new');
+    const news = await get('/inbox?filter=new');
     expect(news.body).not.toContain('Alice');
     expect(news.body).toContain('Carol');
+  });
+
+  it('keeps each show\'s inbox separate and refuses cross-show access', async () => {
+    const mine = await get(`/shows/${show.slug}`);
+    expect(mine.statusCode).toBe(200);
+    expect(mine.body).toContain('Alice');
+    expect(mine.body).not.toContain('Carol');
+    const theirs = await get(`/shows/${other.slug}`);
+    expect(theirs.body).toContain('Carol');
+    expect(theirs.body).not.toContain('Alice');
+    // A message opened under the wrong show's URL is treated as missing, for the page, audio and actions.
+    const wrong = `/shows/${other.slug}/messages/${ids[0]}`;
+    expect((await get(wrong)).statusCode).toBe(404);
+    expect((await get(`${wrong}/audio`)).statusCode).toBe(404);
+    expect((await formPost(h, `${wrong}/delete`, session, {})).statusCode).toBe(404);
+    expect((await get(`/shows/no-such-show`)).statusCode).toBe(404);
+    expect((await get(msgUrl(0))).statusCode).toBe(200);
+  });
+
+  it('lists shows with unread counts on the home page', async () => {
+    const home = await get('/');
+    expect(home.statusCode).toBe(200);
+    expect(home.body).toContain('Your shows');
+    expect(home.body).toContain(`/shows/${other.slug}`);
+    expect(home.body).toContain('/inbox');
   });
 
   it('plays audio with range support so seeking works', async () => {
     const m = h.ctx.repo.getMessage(ids[0]!)!;
     const size = fs.statSync(path.join(h.config.localStoragePath, m.mp3_key!)).size;
 
-    const full = await get(`/admin/messages/${ids[0]}/audio`);
+    const full = await get(`${msgUrl(0)}/audio`);
     expect(full.statusCode).toBe(200);
     expect(full.headers['content-type']).toBe('audio/mpeg');
     expect(full.headers['accept-ranges']).toBe('bytes');
     expect(Number(full.headers['content-length'])).toBe(size);
     expect(full.rawPayload.length).toBe(size);
 
-    const part = await get(`/admin/messages/${ids[0]}/audio`, { range: 'bytes=10-19' });
+    const part = await get(`${msgUrl(0)}/audio`, { range: 'bytes=10-19' });
     expect(part.statusCode).toBe(206);
     expect(part.headers['content-range']).toBe(`bytes 10-19/${size}`);
     expect(part.rawPayload.length).toBe(10);
     expect(part.rawPayload.equals(full.rawPayload.subarray(10, 20))).toBe(true);
 
-    const tail = await get(`/admin/messages/${ids[0]}/audio`, { range: 'bytes=-100' });
+    const tail = await get(`${msgUrl(0)}/audio`, { range: 'bytes=-100' });
     expect(tail.statusCode).toBe(206);
     expect(tail.rawPayload.length).toBe(100);
 
-    const bad = await get(`/admin/messages/${ids[0]}/audio`, { range: `bytes=${size + 5}-` });
+    const bad = await get(`${msgUrl(0)}/audio`, { range: `bytes=${size + 5}-` });
     expect(bad.statusCode).toBe(416);
     expect(bad.headers['content-range']).toBe(`bytes */${size}`);
 
-    const download = await get(`/admin/messages/${ids[0]}/audio?download=1`);
+    const download = await get(`${msgUrl(0)}/audio?download=1`);
     expect(download.headers['content-disposition']).toMatch(/^attachment; filename="randy-unscripted-alice-\d{4}-\d{2}-\d{2}\.mp3"$/);
   });
 
   it('never serves audio to signed-out visitors', async () => {
-    const res = await h.app.inject({ method: 'GET', url: `/admin/messages/${ids[0]}/audio` });
+    const res = await h.app.inject({ method: 'GET', url: `${msgUrl(0)}/audio` });
     expect(res.statusCode).toBe(302);
     expect(res.rawPayload.length).toBeLessThan(200);
   });
 
   it('stars with htmx and rejects the same request without a token', async () => {
-    const denied = await h.app.inject({ method: 'POST', url: `/admin/messages/${ids[1]}/star`, headers: { cookie: session.cookie, origin: APP_URL, 'hx-request': 'true' } });
+    const denied = await h.app.inject({ method: 'POST', url: `${msgUrl(1)}/star`, headers: { cookie: session.cookie, origin: APP_URL, 'hx-request': 'true' } });
     expect(denied.statusCode).toBe(403);
 
     const ok = await h.app.inject({
       method: 'POST',
-      url: `/admin/messages/${ids[1]}/star`,
+      url: `${msgUrl(1)}/star`,
       headers: { cookie: session.cookie, origin: APP_URL, 'hx-request': 'true', 'x-csrf-token': session.csrf },
     });
     expect(ok.statusCode).toBe(200);
@@ -339,33 +368,33 @@ describe.skipIf(!ffmpeg)('admin: inbox, playback and actions', () => {
     expect(ok.body).toContain('star on');
     expect(h.ctx.repo.getMessage(ids[1]!)!.starred).toBe(1);
 
-    const starred = await get('/admin/inbox?filter=starred');
+    const starred = await get('/inbox?filter=starred');
     expect(starred.body).toContain('Bob');
     expect(starred.body).not.toContain('Alice');
   });
 
   it('archives, restores and deletes', async () => {
-    const archive = await formPost(h, `/admin/messages/${ids[2]}/archive`, session, {}, { 'hx-request': 'true' });
+    const archive = await formPost(h, `${msgUrl(2)}/archive`, session, {}, { 'hx-request': 'true' });
     expect(archive.statusCode).toBe(200);
     expect(archive.body).toBe('');
-    expect((await get('/admin/inbox')).body).not.toContain('Carol');
-    expect((await get('/admin/inbox?filter=archived')).body).toContain('Carol');
+    expect((await get('/inbox')).body).not.toContain('Carol');
+    expect((await get('/inbox?filter=archived')).body).toContain('Carol');
 
-    const restore = await formPost(h, `/admin/messages/${ids[2]}/archive`, session, {});
+    const restore = await formPost(h, `${msgUrl(2)}/archive`, session, {});
     expect(restore.statusCode).toBe(302);
-    expect((await get('/admin/inbox')).body).toContain('Carol');
+    expect((await get('/inbox')).body).toContain('Carol');
 
-    const del = await formPost(h, `/admin/messages/${ids[2]}/delete`, session, {}, { 'hx-request': 'true' });
+    const del = await formPost(h, `${msgUrl(2)}/delete`, session, {}, { 'hx-request': 'true' });
     expect(del.statusCode).toBe(200);
-    expect((await get('/admin/inbox?filter=all')).body).not.toContain('Carol');
-    expect((await get(`/admin/messages/${ids[2]}`)).statusCode).toBe(404);
-    expect((await get(`/admin/messages/${ids[2]}/audio`)).statusCode).toBe(404);
+    expect((await get('/inbox?filter=all')).body).not.toContain('Carol');
+    expect((await get(`${msgUrl(2)}`)).statusCode).toBe(404);
+    expect((await get(`${msgUrl(2)}/audio`)).statusCode).toBe(404);
   });
 
   it('saves private notes', async () => {
-    const res = await formPost(h, `/admin/messages/${ids[0]}/notes`, session, { notes: 'Great question for episode 12' });
+    const res = await formPost(h, `${msgUrl(0)}/notes`, session, { notes: 'Great question for episode 12' });
     expect(res.statusCode).toBe(302);
-    const page = await get(`/admin/messages/${ids[0]}`);
+    const page = await get(`${msgUrl(0)}`);
     expect(page.body).toContain('Great question for episode 12');
   });
 
@@ -373,9 +402,9 @@ describe.skipIf(!ffmpeg)('admin: inbox, playback and actions', () => {
     const body = multipart({ key: show.site_key, name: 'Dave', consent: 'true', 'cf-turnstile-response': 'ok' }, { data: Buffer.from('not audio') });
     const res = await h.app.inject({ method: 'POST', url: '/api/public/messages', payload: body.payload, headers: { ...body.headers, origin: APP_URL } });
     await h.ctx.queue.idle();
-    const page = await get(`/admin/messages/${res.json().id}`);
+    const page = await get(`/shows/${show.slug}/messages/${res.json().id}`);
     expect(page.body).toContain('could not be processed');
-    expect((await get('/admin/inbox?filter=failed')).body).toContain('Dave');
-    expect((await get(`/admin/messages/${res.json().id}/audio`)).statusCode).toBe(404);
+    expect((await get('/inbox?filter=failed')).body).toContain('Dave');
+    expect((await get(`/shows/${show.slug}/messages/${res.json().id}/audio`)).statusCode).toBe(404);
   });
 });
