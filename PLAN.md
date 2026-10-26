@@ -260,11 +260,12 @@ All settings come from environment variables (a `.env` file in Docker Compose).
 
 **Docker Compose (primary)**
 
-- Services: `app` (Node image with ffmpeg and ffprobe included) and `caddy` (automatic HTTPS and reverse proxy).
+- Services: `app` (Node image with ffmpeg and ffprobe included) and `caddy` (automatic HTTPS and reverse proxy, enabled by the `caddy` compose profile). For a Cloudflare Tunnel, `docker-compose.tunnel.yml` publishes the app on `127.0.0.1:3000` instead. `COMPOSE_PROFILES` / `COMPOSE_FILE` in `.env` pick the mode.
+- `scripts/install.sh` (Ubuntu and Debian): installs missing tools including Docker from Docker's official apt repository, asks for settings, writes `.env` (private, secrets kept on re-runs, `SESSION_SECRET` generated once), starts the stack, and creates the admin and first show. It can also be fed answers through environment variables with `--yes`.
 - One volume for `/data` (SQLite and, with the local driver, audio); Caddy has its own volume for certificates.
 - Image runs as a non-root user; `/healthz` backs the container health check.
-- Upgrades: pull, rebuild, `docker compose up -d`; migrations run automatically at startup.
-- The Dockerfile and compose file are written but the image has not been built or run yet; no Docker daemon was available during development. Test this first on the server.
+- Upgrades: `scripts/update.sh` re-checks dependencies, backs up the SQLite database inside the data volume (newest 7 kept), fast-forwards the git checkout, rebuilds and restarts, and reports new settings in `.env.example`; migrations run automatically at startup. It refuses to run over local changes to tracked files and prints rollback steps if the new version is unhealthy.
+- The Dockerfile, compose files and both scripts are written. The scripts were tested against a stand-in `docker` command; the real image build and a run on a clean Ubuntu server have not been done yet (no Docker daemon was available during development). Test this first on the server.
 
 **systemd (alternative)**
 
@@ -338,7 +339,7 @@ Each phase is done only when its acceptance criteria pass.
 ## Build notes (Phase 1)
 
 - Verified: 59 automated tests, plus a headless Chromium run through the embed, recording, upload, MP3 conversion, email alert and admin playback with a fake microphone and a stand-in Turnstile script.
-- Not yet verified: real iOS Safari and Android Chrome recording, a live Turnstile key, a live S3 bucket, a live SMTP or Resend send, and the Docker image build.
+- Not yet verified: real iOS Safari and Android Chrome recording, a live Turnstile key, a live S3 bucket, a live SMTP or Resend send, the Docker image build, and the install and update scripts on a real server.
 - Per-show Turnstile secrets are encrypted with AES-256-GCM, keyed from `SESSION_SECRET`.
 - The slug `new` is reserved (it would clash with `/shows/new`); a show named "New" gets `new-show`.
 - Admin CLI: `create-admin`, `add-show`, `list-shows`, `set-origins`, `rotate-key` (run `node dist/cli.js` inside the container).

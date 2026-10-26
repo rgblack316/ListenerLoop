@@ -33,30 +33,41 @@ ListenerLoop is a self-hosted, open-source widget that lets listeners record a v
 4. The server validates the upload, converts it to MP3, stores it, and emails the admin.
 5. The admin listens and manages messages in the dashboard.
 
-## Quick start (Ubuntu Server, Docker Compose)
+## Install (Ubuntu or Debian server)
 
 ```bash
 git clone https://github.com/rgblack316/ListenerLoop.git && cd ListenerLoop
-cp .env.example .env        # set APP_URL, APP_DOMAIN, SESSION_SECRET, Turnstile, storage, mail
-docker compose up -d --build
-
-# create the admin login, then add your first show
-docker compose exec app node dist/cli.js create-admin you@example.com
-docker compose exec app node dist/cli.js add-show --name "My Podcast" --origin https://mypodcast.com
+sudo ./scripts/install.sh
 ```
 
-`add-show` prints the show's site key. Paste the embed snippet into the podcast site:
+The installer checks for git, curl, openssl and Docker (installing anything missing from Docker's official repository), then asks about your domain, Cloudflare Turnstile keys, storage (S3 or local), and email (SMTP, Resend or none). It writes `.env`, builds and starts the app, and creates your admin login and first show. Run it again at any time to change settings: your current answers are offered as defaults, and pressing Enter keeps saved secrets. `sudo ./scripts/install.sh --yes` runs without questions, reading answers from environment variables (see the top of the script).
+
+Choose how people reach the app:
+- **Caddy HTTPS:** the server gets its own certificate. Point the domain's DNS at the server and open ports 80 and 443.
+- **Cloudflare Tunnel or another proxy:** the app listens on `127.0.0.1:3000`; point the tunnel at `http://localhost:3000`.
+
+## Update
+
+```bash
+cd ListenerLoop
+sudo ./scripts/update.sh
+```
+
+The updater re-checks Docker and the other tools, backs up the database (inside the Docker volume, newest 7 kept), pulls the latest code, rebuilds and restarts, and tells you if the new version has settings your `.env` does not have yet. Your `.env` and recordings are not touched. Use `--restart` to rebuild after editing `.env`. It stops if you have local changes to tracked files.
+
+## After installing
+
+Paste the embed snippet from the **Shows** page into the podcast site:
 
 ```html
 <script src="https://YOUR-APP-DOMAIN/embed.js" data-site-key="SITE_KEY" async></script>
 ```
 
-Then sign in at `https://YOUR-APP-DOMAIN/login`. Each show has its own inbox at `/shows/<slug>` (for example `/shows/bible-bytes`), and `/inbox` combines all of them. Other CLI commands: `list-shows`, `set-origins`, `rotate-key`.
+Sign in at `https://YOUR-APP-DOMAIN/login`. Each show has its own inbox at `/shows/<slug>` (for example `/shows/bible-bytes`), and `/inbox` combines all of them. CLI helpers: `docker compose exec app node dist/cli.js` with `create-admin`, `add-show`, `list-shows`, `set-origins`, `rotate-key`.
 
-- **Docker:** the Dockerfile and compose file have not been build-tested yet, so expect to iron out small issues on the first run.
+- **Docker and scripts:** the scripts were tested against a stand-in Docker, but the real image build and a run on a clean Ubuntu server have not been tried yet, so expect to iron out small issues on the first run.
 - **Storage:** with the `s3` driver, use a private bucket and an access key made just for ListenerLoop, not your public podcast CDN. Audio is played through the app (a signed link that expires after 5 minutes), never from a public URL.
 - **Turnstile:** create one widget in Cloudflare listing only your app's hostname. Embedding sites need no key of their own.
-- **Behind a Cloudflare Tunnel:** run the app alone (see the comments in `docker-compose.yml`) and point the tunnel at port 3000. Keep `TRUST_PROXY=true`.
 - **Local development:** `npm install && npm run dev` (Node 22+, ffmpeg on the PATH). Use Cloudflare's dummy Turnstile keys from `.env.example`.
 - **Tests:** `npm test` (needs ffmpeg).
 

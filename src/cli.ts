@@ -11,6 +11,7 @@ Usage:
   create-admin <email> [--force]     Create the admin account, or reset its login with --force.
                                      The password comes from ADMIN_PASSWORD or a prompt (12+ characters).
   add-show --name "My Show" [--origin https://mysite.com]... [--notify-email you@example.com] [--max-seconds 180]
+  has-admin                          Exit code 0 if an admin account exists, 1 if not (used by the installer).
   list-shows                         Show every show with its site key and embed code.
   set-origins <slug> <origin>...     Replace the sites allowed to embed a show.
   rotate-key <slug>                  Issue a new site key. Old embeds stop working.
@@ -100,6 +101,9 @@ async function main(): Promise<void> {
   const { positional, values, bools } = flags(rest);
 
   switch (command) {
+    case 'has-admin':
+      process.exit(repo.getAdmin() ? 0 : 1);
+      break;
     case 'create-admin': {
       const email = (positional[0] ?? '').trim().toLowerCase();
       if (!isValidEmail(email)) throw new Error('Give a valid email address: create-admin you@example.com');

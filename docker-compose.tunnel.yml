@@ -1,0 +1,6 @@
+# Adds a local port for Cloudflare Tunnel or another reverse proxy on this machine.
+# Enabled by COMPOSE_FILE=docker-compose.yml:docker-compose.tunnel.yml in .env (the installer sets it).
+services:
+  app:
+    ports:
+      - "127.0.0.1:3000:3000"

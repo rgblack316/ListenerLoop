@@ -1,12 +1,15 @@
 # ListenerLoop: app + Caddy (automatic HTTPS).
 #
-#   cp .env.example .env      # then edit it
+# Easiest: sudo ./scripts/install.sh (installs Docker, asks questions, writes .env, starts everything).
+#
+# By hand:
+#   cp .env.example .env      # edit it, and add the line COMPOSE_PROFILES=caddy
 #   docker compose up -d --build
 #   docker compose exec app node dist/cli.js create-admin you@example.com
 #
-# Using a Cloudflare Tunnel or your own reverse proxy instead of Caddy?
-# Start only the app: `docker compose up -d --build app`, publish the port by
-# uncommenting `ports` below, and point the tunnel at http://localhost:3000.
+# Cloudflare Tunnel or your own reverse proxy instead of Caddy? Leave COMPOSE_PROFILES unset and add
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.tunnel.yml
+# to .env, which publishes the app on 127.0.0.1:3000 for the tunnel to reach.
 
 services:
   app:
@@ -20,11 +23,10 @@ services:
       - listenerloop-data:/data
     expose:
       - "3000"
-    # ports:
-    #   - "127.0.0.1:3000:3000"
 
   caddy:
     image: caddy:2
+    profiles: ["caddy"]
     restart: unless-stopped
     depends_on:
       - app
@@ -33,7 +35,7 @@ services:
       - "443:443"
       - "443:443/udp"
     environment:
-      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN in .env (for example listenerloop.app)}
+      APP_DOMAIN: ${APP_DOMAIN:-localhost}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
