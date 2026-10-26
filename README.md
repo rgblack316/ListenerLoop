@@ -53,10 +53,20 @@ docker compose exec app node dist/cli.js add-show --name "My Podcast" --origin h
 
 Then sign in at `https://YOUR-APP-DOMAIN/login`. Each show has its own inbox at `/shows/<slug>` (for example `/shows/bible-bytes`), and `/inbox` combines all of them. Other CLI commands: `list-shows`, `set-origins`, `rotate-key`.
 
+- **Docker:** the Dockerfile and compose file have not been build-tested yet, so expect to iron out small issues on the first run.
+- **Storage:** with the `s3` driver, use a private bucket and an access key made just for ListenerLoop, not your public podcast CDN. Audio is played through the app (a signed link that expires after 5 minutes), never from a public URL.
 - **Turnstile:** create one widget in Cloudflare listing only your app's hostname. Embedding sites need no key of their own.
 - **Behind a Cloudflare Tunnel:** run the app alone (see the comments in `docker-compose.yml`) and point the tunnel at port 3000. Keep `TRUST_PROXY=true`.
 - **Local development:** `npm install && npm run dev` (Node 22+, ffmpeg on the PATH). Use Cloudflare's dummy Turnstile keys from `.env.example`.
 - **Tests:** `npm test` (needs ffmpeg).
+
+## What works today
+
+- One installation, many shows, each with its own site key, allowed sites, widget text and inbox.
+- Embed button, recorder modal (name required, email optional, consent notice), Turnstile, MP3 conversion, local or S3 storage.
+- Admin: sign in, per-show and combined inboxes, playback with speed control and download, star, archive, delete, private notes, and an email alert for each new message.
+
+**Not built yet:** file-upload fallback and hosted `/s/<slug>` page, retry of failed messages, retention purge, search, bulk download, settings page, replies to listeners, multiple users. See the roadmap.
 
 ## Stack
 
@@ -67,17 +77,17 @@ Then sign in at `https://YOUR-APP-DOMAIN/login`. Each show has its own inbox at 
 | Audio | ffmpeg and ffprobe, MP3 output |
 | Storage | `s3` (any S3-compatible service) or `local` driver |
 | Admin UI | Server-rendered pages with htmx, no SPA framework |
-| Admin auth | Single admin to start (argon2, session cookie) |
+| Admin auth | Single admin to start (argon2, session cookie); multi-user with per-show access later |
 | Email | SMTP or Resend |
 | Spam protection | Cloudflare Turnstile, one app-wide key (per-show override optional) |
-| Deploy | Docker Compose on Ubuntu Server (app + Caddy), with a systemd alternative |
+| Deploy | Docker Compose on Ubuntu Server (app + Caddy). A systemd guide is planned. |
 
 ## Roadmap
 
 1. **MVP (built):** recorder, upload, MP3 conversion, storage drivers, admin inbox, email alert.
-2. **Hardening:** rate limits, origin allowlist, upload fallback, backups, in-app browser testing.
-3. **Quality of life:** star, archive, search, waveforms, optional transcription.
-4. **Later:** reply to listeners by email, multi-user admin, webhooks, Postgres, phone-in via Twilio.
+2. **Hardening:** per-show rate limits, upload fallback and hosted page, retry and retention, backup and restore docs, in-app browser testing.
+3. **Quality of life:** search, bulk download, waveforms, optional transcription.
+4. **Later:** reply to listeners by email, multi-user admin (with per-show access), webhooks, Postgres, phone-in via Twilio.
 
 Details and acceptance criteria are in [PLAN.md](PLAN.md).
 
