@@ -72,7 +72,7 @@ Site owners paste one line; everything else lives on the tool's own domain.
 3. The iframe holds the recorder UI and the Turnstile challenge, so host-site CSS and JavaScript cannot interfere with it.
 4. The iframe posts events to the parent with `postMessage` (`vm:ready`, `vm:submitted`, `vm:error`, `vm:close`). The parent only accepts them from the widget origin.
 
-**Per-show configuration** (managed in admin, fetched by site key): button label and colors, prompt text, maximum duration, Turnstile site and secret keys, whether the name and email fields are shown (both always optional for the listener), consent text, thank-you message, and the allowed origins list.
+**Per-show configuration** (managed in admin, fetched by site key): button label and colors, prompt text, maximum duration, Turnstile site and secret keys, whether the email field is shown (always optional for the listener; the name field is always shown and required), consent text, thank-you message, and the allowed origins list.
 
 **Fallback link:** each show also gets a hosted page at `/s/<show-slug>` for newsletters, social bios and browsers where iframe microphone access is blocked.
 
@@ -83,13 +83,13 @@ Site owners paste one line; everything else lives on the tool's own domain.
 1. Request the mic with `getUserMedia({ audio: true })` on a user click (required on iOS).
 2. Record with `MediaRecorder`, choosing the first supported type from `audio/webm;codecs=opus`, `audio/mp4`, then the browser default.
 3. Show a live level meter and timer; auto-stop at the configured maximum (default 3 minutes).
-4. Let the listener play back, re-record, or submit.
-5. Submit as `multipart/form-data` (audio blob, optional name and email, consent flag, Turnstile token) in a single POST.
+4. Ask for the listener's name (required) and, optionally, an email address. Let them play back, re-record, or submit once a name is entered.
+5. Submit as `multipart/form-data` (audio blob, required name, optional email, consent flag, Turnstile token) in a single POST.
 6. If the mic is unavailable or blocked (in-app browsers, permission denied), offer a file-upload input and a link to the hosted page.
 
 **On the server**
 
-1. Validate site key, origin, Turnstile token, size cap (default 15 MB) and content type.
+1. Validate site key, origin, Turnstile token, a non-empty sender name (up to 100 characters), size cap (default 15 MB) and content type.
 2. Write the upload to a temp file and create a `messages` row with status `processing`.
 3. Probe with `ffprobe`: reject non-audio, enforce the duration cap, record the real duration.
 4. Run `ffmpeg` to produce MP3 (mono, 64 kbps by default, configurable), with optional loudness normalization.
@@ -104,8 +104,8 @@ Four tables for v1. IDs are ULIDs; timestamps are UTC.
 
 | Table | Key fields |
 | --- | --- |
-| `shows` | id, name, slug, site_key (public), allowed_origins (list), notify_email, max_seconds, ask_name, ask_email, consent_text, button_label, accent_color, prompt_text, thanks_text, retain_original, turnstile_site_key, turnstile_secret_key (stored encrypted), created_at |
-| `messages` | id, show_id, status (`processing`, `ready`, `failed`), starred, archived, sender_name, sender_email, consent_given, duration_seconds, mp3_key, original_key, size_bytes, original_mime, ip_hash, user_agent, transcript (nullable), notes, created_at, deleted_at |
+| `shows` | id, name, slug, site_key (public), allowed_origins (list), notify_email, max_seconds, ask_email, consent_text, button_label, accent_color, prompt_text, thanks_text, retain_original, turnstile_site_key, turnstile_secret_key (stored encrypted), created_at |
+| `messages` | id, show_id, status (`processing`, `ready`, `failed`), starred, archived, sender_name (required), sender_email (optional), consent_given, duration_seconds, mp3_key, original_key, size_bytes, original_mime, ip_hash, user_agent, transcript (nullable), notes, created_at, deleted_at |
 | `admin` | id, email, password_hash (argon2id), created_at (single row in v1; becomes `users` with roles later) |
 | `settings` | key, value (email provider, storage options changed in admin, retention days) |
 
@@ -162,7 +162,7 @@ Buckets are always private. Audio is never publicly addressable; only authentica
 
 Server-rendered pages, with htmx for small live updates such as starring or archiving without a page reload. The layout is mobile-friendly so messages can be reviewed from a phone.
 
-- **Inbox:** all shows or one show; filter by new, starred, archived, failed; sort newest first; unread indicator.
+- **Inbox:** all shows or one show; filter by new, starred, archived, failed; sort newest first; unread indicator; the sender's name appears on every row so you know who left a message before you play it.
 - **Message view:** audio player with speed control, sender details, duration, date, private notes, star, archive, delete, download MP3.
 - **Bulk actions:** select several to download as a zip, archive or delete.
 - **Shows:** create and edit shows, copy the embed snippet, rotate the site key, edit allowed origins, adjust widget appearance with a live preview.
@@ -185,7 +185,7 @@ Server-rendered pages, with htmx for small live updates such as starring or arch
 **Privacy**
 
 - A consent line is shown before recording, with configurable text per show.
-- The email field is shown by default but is always optional, with a note that it is only used to reply. The name field is optional too, and either can be hidden per show.
+- The email field is shown by default but is always optional, with a note that it is only used to reply. The name field is always shown and required, so the podcaster knows who left a message before listening. Only the email field can be hidden per show.
 - Retention is configurable (for example, auto-delete after N days), and listeners can be given a contact address to request removal.
 - Uploaded filenames and client metadata are never trusted or stored as paths.
 
@@ -196,7 +196,7 @@ A mail adapter with two providers, chosen by `MAIL_PROVIDER`:
 - **`smtp`:** works with any provider through host, port, user and password.
 - **`resend`:** a single API key, using Resend's HTTP API.
 
-Each new message sends the show's `notify_email` a short note with the show name, duration, sender details if given, and a link to the admin page. Audio is not attached, which keeps the email small and the recording private. Sending is asynchronous, so an email failure never blocks or fails a submission; it is logged and shown in admin.
+Each new message sends the show's `notify_email` a short note with the show name, duration, the sender's name (and email if shared), and a link to the admin page. Audio is not attached, which keeps the email small and the recording private. Sending is asynchronous, so an email failure never blocks or fails a submission; it is logged and shown in admin.
 
 ## Configuration reference
 

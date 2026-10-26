@@ -25,7 +25,7 @@ ListenerLoop is a self-hosted, open-source widget that lets listeners record a v
    ```
 
 2. The script adds a button that opens the recorder in an iframe hosted by ListenerLoop.
-3. The listener records (up to 3 minutes by default), plays it back, and submits. Name and email are optional.
+3. The listener records (up to 3 minutes by default), plays it back, and submits. Name is required so you know who left the message; email is optional.
 4. The server validates the upload, converts it to MP3, stores it, and emails the admin.
 5. The admin listens and manages messages in the dashboard.
 
