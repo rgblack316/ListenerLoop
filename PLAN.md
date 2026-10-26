@@ -298,7 +298,7 @@ Each phase is done only when its acceptance criteria pass.
 - [ ] Rate limits, origin allowlist, CSP and `frame-ancestors`: the basics are built and unit tested in Phase 1; add per-show limits, a daily cap and a scripted abuse test run.
 - [ ] Per-show widget settings with live preview in admin.
 - [ ] File-upload fallback and hosted `/s/:slug` page.
-- [ ] Retry for failed processing; purge job and retention setting.
+- [ ] Retry for failed processing; automatic deletion by age (retention setting). Deleting a message already removes its files.
 - [ ] Backup and restore documentation, tested once end to end.
 - [ ] In-app browser testing (Facebook, Instagram, and similar).
 
