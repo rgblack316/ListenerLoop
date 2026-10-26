@@ -1,5 +1,9 @@
 # ListenerLoop: Project Plan
 
+<p align="center">
+  <img src="brand-assets/ListenerLoop-Full-Logo-gradient.svg" alt="ListenerLoop: Turn listener feedback into conversation" width="480">
+</p>
+
 *Turn listener feedback into conversation.*
 
 Last updated: 2026-10-24. Tick the checkboxes below as work lands.

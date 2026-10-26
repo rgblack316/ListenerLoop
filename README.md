@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="brand-assets/ListenerLoop-Full-Logo-gradient.svg" alt="ListenerLoop: Turn listener feedback into conversation" width="480">
+</p>
+
 # ListenerLoop
 
 **Turn listener feedback into conversation.**
