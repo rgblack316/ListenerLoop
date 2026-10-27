@@ -453,7 +453,7 @@ export interface SettingsView {
   storage: { driver: string; location: string };
   turnstile: { siteKey: string };
   limits: { rateLimitPerHour: number; rateLimitPerShowHour: number; dailyCapPerShow: number; maxUploadMb: number; maxSecondsDefault: number; retentionDays: number; keepOriginals: boolean; mp3BitrateKbps: number };
-  backups: { settings: BackupSettings; list: Backup[]; next: string | null; storage: 'local' | 's3'; running: boolean; dir: string };
+  backups: { settings: BackupSettings; list: Backup[]; next: string | null; storage: 'local' | 's3'; running: boolean; dir: string; lastRestore: { at: string; ok: boolean; error?: string; safeDir?: string; created?: string | null } | null; importMb: number };
   /** Outcome of the button that was just pressed. */
   result?: { section: 'email' | 'storage' | 'backups'; ok: boolean; message: string; steps?: string[] };
 }
@@ -501,6 +501,11 @@ export function settingsPage(v: SettingsView): string {
     <section class="card" id="backups">
       <h2>Backups</h2>
       ${outcome('backups')}
+      ${v.backups.lastRestore
+        ? v.backups.lastRestore.ok
+          ? html`<div class="notice"><p>A backup${v.backups.lastRestore.created ? html` made ${timeTag(v.backups.lastRestore.created)}` : ''} was restored ${timeTag(v.backups.lastRestore.at)}. The earlier data was set aside in <code>${v.backups.lastRestore.safeDir}</code> and is deleted after 30 days.</p></div>`
+          : html`<div class="alert"><p>A restore was tried ${timeTag(v.backups.lastRestore.at)} but failed, so your earlier data is still in use: ${v.backups.lastRestore.error}</p></div>`
+        : ''}
       <p class="muted">A backup is one file holding a safe copy of the database (messages, shows, users, replies, transcripts and settings)${v.backups.storage === 'local' ? ' and the audio files' : '. Your audio lives in S3 or R2 and is not included, so protect that bucket separately'}. It does not include the <code>.env</code> file. Backups on this server are kept in <code>${v.backups.dir}</code>.</p>
       <form method="post" action="/settings/backups/run" class="inline">${csrfField(v.csrf)}
         <button class="btn primary" type="submit" ${v.backups.running ? raw('disabled') : ''}>${v.backups.running ? 'A backup is running…' : 'Back up now'}</button>
@@ -543,12 +548,19 @@ export function settingsPage(v: SettingsView): string {
                 ${b.status === 'running' ? html`<span class="badge">running</span>` : b.status === 'failed' ? html`<span class="badge bad">failed</span>` : ''}</span>
                 <span class="meta">${b.status === 'ok' ? html`${(b.size_bytes ?? 0) < 1048576 ? `${Math.max(1, Math.round((b.size_bytes ?? 0) / 1024))} KB` : `${((b.size_bytes ?? 0) / 1048576).toFixed(1)} MB`}${b.includes_audio ? ' · with audio' : ' · database only'} · ${b.has_local && b.storage_key ? 'server + bucket' : b.storage_key ? 'bucket only' : 'on server'}` : ''}${b.error ? html`${b.error}` : ''}${b.started_by ? html` · by ${b.started_by}` : ''}</span></span>
               <span class="row-actions">
-                ${b.status === 'ok' ? html`<a href="/settings/backups/${b.id}/download">Download</a>` : ''}
+                ${b.status === 'ok' ? html`<a href="/settings/backups/${b.id}/download">Download</a> <a href="/settings/backups/${b.id}/restore">Restore</a>` : ''}
                 ${b.status !== 'running' ? html`<form method="post" action="/settings/backups/${b.id}/delete" class="inline" data-confirm="Delete this backup?">${csrfField(v.csrf)}<button class="link danger">Delete</button></form>` : ''}
               </span></li>`,
           )}</ul>`
         : html`<p class="muted">No backups yet.</p>`}
-      <p class="muted">Downloaded backups contain everything in your database, including sign-in details, so keep them private and store a copy off this server. To restore, run <code>sudo ./scripts/restore.sh backup.tar.gz</code> on the server.</p>
+      <h3>Restore from a file</h3>
+      <form method="post" action="/settings/backups/import" enctype="multipart/form-data" class="stack">${csrfField(v.csrf)}
+        <label>Backup file (.tar.gz)<input type="file" name="file" accept=".gz,.tgz,application/gzip" required></label>
+        <button class="btn" type="submit">Upload backup</button>
+        <small>Up to ${v.backups.importMb} MB. Uploading adds it to the list above, and you then choose Restore. Behind Cloudflare, uploads over 100 MB are refused: copy larger files into <code>${v.backups.dir}</code> on the server and press Find backup files.</small>
+      </form>
+      <form method="post" action="/settings/backups/scan" class="inline">${csrfField(v.csrf)}<button class="btn" type="submit">Find backup files in the folder</button></form>
+      <p class="muted">Downloaded backups contain everything in your database, including sign-in details, so keep them private and store a copy off this server. You can also restore from the command line with <code>sudo ./scripts/restore.sh backup.tar.gz</code>.</p>
     </section>
 
     <section class="card">

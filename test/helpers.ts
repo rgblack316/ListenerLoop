@@ -30,6 +30,7 @@ export interface Harness {
 export async function makeHarness(
   env: Record<string, string> = {},
   verify?: TurnstileVerifier,
+  opts: { fileDb?: boolean } = {},
 ): Promise<Harness> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'listenerloop-test-'));
   const config = loadConfig({
@@ -57,7 +58,7 @@ export async function makeHarness(
       : { success: true, hostname: new URL(APP_URL).hostname, errorCodes: [] };
   const { app, ctx } = await buildApp({
     config,
-    db: openDb(':memory:'),
+    db: openDb(opts.fileDb ? config.databasePath : ':memory:'),
     storage: new LocalStorage(config.localStoragePath),
     mailer,
     verifyTurnstile: verify ?? defaultVerify,

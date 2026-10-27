@@ -1,4 +1,5 @@
 import { deliverDue } from './webhook.js';
+import { applyPendingRestore, prunePreRestore, reconcileBackups } from './restore.js';
 import { scheduledBackupDue, startBackup } from './backup.js';
 import './env.js';
 import { buildApp } from './app.js';
@@ -18,7 +19,21 @@ async function main(): Promise<void> {
     throw err;
   }
 
+  // A restore chosen in the admin is applied here, before the database is opened.
+  const restored = applyPendingRestore({
+    dataDir: config.dataDir,
+    databasePath: config.databasePath,
+    audioPath: config.localStoragePath,
+    localStorage: config.storageDriver === 'local',
+  });
+  prunePreRestore(config.dataDir);
   const { app, ctx } = await buildApp({ config });
+  if (restored) {
+    ctx.repo.setSetting('last_restore', JSON.stringify(restored));
+    if (restored.ok) app.log.warn({ safeDir: restored.safeDir }, 'restored a backup');
+    else app.log.error({ error: restored.error }, 'the staged restore failed; the previous data is still in use');
+  }
+  void reconcileBackups(ctx).catch((err) => app.log.warn({ err }, 'could not check the backups folder'));
 
   if (!ctx.mailer) {
     app.log.warn('No mail provider is configured (MAIL_PROVIDER, SMTP_HOST or RESEND_API_KEY, MAIL_FROM). Email alerts are off.');

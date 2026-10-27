@@ -40,6 +40,7 @@ import {
   type Show,
   ftsQuery,
 } from '../db/repo.js';
+import { MAX_IMPORT_MB } from '../restore.js';
 import { backupDir, backupRunning, loadBackupSettings, nextSlot } from '../backup.js';
 import { registerBackupRoutes } from './backups.js';
 import { registerUserRoutes } from './users.js';
@@ -535,6 +536,15 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
       storage: storage.name,
       running: backupRunning(),
       dir: backupDir(ctx),
+      lastRestore: (() => {
+        try {
+          const raw = repo.getSetting('last_restore');
+          return raw ? (JSON.parse(raw) as NonNullable<SettingsView['backups']['lastRestore']>) : null;
+        } catch {
+          return null;
+        }
+      })(),
+      importMb: MAX_IMPORT_MB,
     },
     result,
   });
@@ -544,6 +554,8 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     saved: { ok: true, message: 'Backup schedule saved.' },
     deleted: { ok: true, message: 'Backup deleted.' },
     running: { ok: false, message: 'A backup is already running.' },
+    imported: { ok: true, message: 'Backup added to the list. Choose Restore to use it.' },
+    scanned: { ok: true, message: 'Checked the backups folder.' },
   };
   app.get('/settings', ownerAuthed((req, reply, session) => {
     const flash = BACKUP_FLASH[(req.query as { backup?: string }).backup ?? ''];
@@ -595,7 +607,8 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
   );
 
   // User management, account and sign-in links live in routes/users.ts
-  const kit = { authed, mutating, ownerAuthed, ownerMutating, page, sameOrigin, field, forbidden, accessibleShows, notFound };
+  const renderSettings = (reply: FastifyReply, session: AdminSession, result: NonNullable<SettingsView['result']>, status = 200): FastifyReply => page(reply, settingsPage(settingsView(session, result)), status);
+  const kit = { renderSettings, authed, mutating, ownerAuthed, ownerMutating, page, sameOrigin, field, forbidden, accessibleShows, notFound };
   registerUserRoutes(app, ctx, kit);
   registerWebhookRoutes(app, ctx, kit);
   registerExportRoutes(app, ctx, kit);
