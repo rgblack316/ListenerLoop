@@ -63,7 +63,7 @@ Paste the embed snippet from the **Shows** page into the podcast site:
 <script src="https://YOUR-APP-DOMAIN/embed.js" data-site-key="SITE_KEY" async></script>
 ```
 
-Sign in at `https://YOUR-APP-DOMAIN/login`. Each show has its own inbox at `/shows/<slug>` (for example `/shows/bible-bytes`), and `/inbox` combines all of them. CLI helpers: `docker compose exec app node dist/cli.js` with `create-admin`, `add-show`, `list-shows`, `set-origins`, `rotate-key`.
+Sign in at `https://YOUR-APP-DOMAIN/login`. The first owner is made with `create-admin`; after that, owners add people from **Users**: an emailed invitation link (valid 7 days) lets them choose their own password. Roles: **owner** (everything), **editor** (listen, star, archive, delete, reply, transcribe, download on assigned shows), **viewer** (read-only on assigned shows). Everyone can change their password and turn on two-step sign-in (authenticator app plus recovery codes) from **Account**; an owner can make a password reset link or switch off two-step for a locked-out user. Each show has its own inbox at `/shows/<slug>` (for example `/shows/bible-bytes`), and `/inbox` combines all of them. CLI helpers: `docker compose exec app node dist/cli.js` with `create-admin` (creates or resets the first owner), `add-show`, `list-shows`, `set-origins`, `rotate-key`.
 
 - **Storage:** with the `s3` driver, use a private bucket and an access key made just for ListenerLoop, not your public podcast CDN. Audio is played through the app (a signed link that expires after 5 minutes), never from a public URL.
 - **Turnstile:** create one widget in Cloudflare listing only your app's hostname. Embedding sites need no key of their own.
@@ -132,7 +132,7 @@ To restore on the same server, run `restore.sh` with the archive. It asks for co
 | Audio | ffmpeg and ffprobe, MP3 output |
 | Storage | `s3` (any S3-compatible service) or `local` driver |
 | Admin UI | Server-rendered pages with htmx, no SPA framework |
-| Admin auth | Single admin to start (argon2, session cookie); multi-user with per-show access later |
+| Admin auth | Multiple users with owner, editor and viewer roles and per-show access (argon2, session cookie, optional TOTP) |
 | Email | SMTP or Resend |
 | Spam protection | Cloudflare Turnstile, one app-wide key for every show |
 | Deploy | Docker Compose on Ubuntu Server (app + Caddy). A systemd guide is planned. |
@@ -142,7 +142,8 @@ To restore on the same server, run `restore.sh` with the archive. It asks for co
 1. **MVP (built):** recorder, upload, MP3 conversion, storage drivers, admin inbox, email alert.
 2. **Hardening (done):** abuse limits, retention, settings, live preview, backups, in-app browser check (Facebook tested, Instagram assumed).
 3. **Quality of life (built):** search, bulk download, waveforms, optional transcription, loudness normalization.
-4. **Later:** reply to listeners by email, multi-user admin (with per-show access), webhooks, Postgres, phone-in via Twilio.
+4. **Built:** reply to listeners by email, cover art, multi-user admin with per-show access.
+5. **Later:** webhooks and export.
 
 Details and acceptance criteria are in [PLAN.md](PLAN.md).
 

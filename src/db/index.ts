@@ -175,6 +175,59 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE shows ADD COLUMN cover_error TEXT;
     `,
   },
+  {
+    id: 10,
+    name: 'multi-user admin',
+    sql: `
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        name TEXT NOT NULL DEFAULT '',
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('owner', 'editor', 'viewer')),
+        disabled_at TEXT,
+        totp_secret TEXT,
+        totp_enabled INTEGER NOT NULL DEFAULT 0,
+        totp_last_step INTEGER,
+        created_at TEXT NOT NULL,
+        last_login_at TEXT
+      );
+      CREATE TABLE user_shows (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        show_id TEXT NOT NULL REFERENCES shows(id) ON DELETE CASCADE,
+        PRIMARY KEY (user_id, show_id)
+      );
+      CREATE TABLE invites (
+        id TEXT PRIMARY KEY,
+        token_hash TEXT NOT NULL UNIQUE,
+        kind TEXT NOT NULL CHECK (kind IN ('invite', 'reset')),
+        email TEXT NOT NULL,
+        role TEXT,
+        show_ids TEXT NOT NULL DEFAULT '[]',
+        user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT
+      );
+      CREATE TABLE recovery_codes (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        code_hash TEXT NOT NULL,
+        used_at TEXT,
+        PRIMARY KEY (user_id, code_hash)
+      );
+      INSERT INTO users (id, email, name, password_hash, role, created_at)
+        SELECT lower(hex(randomblob(16))), email, '', password_hash, 'owner', created_at FROM admin WHERE id = 1;
+      DROP TABLE sessions;
+      CREATE TABLE sessions (
+        token_hash TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+      );
+      DROP TABLE admin;
+    `,
+  },
 ];
 
 export function migrate(db: DB): void {

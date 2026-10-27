@@ -102,18 +102,18 @@ async function main(): Promise<void> {
 
   switch (command) {
     case 'has-admin':
-      process.exit(repo.getAdmin() ? 0 : 1);
+      process.exit(repo.hasOwner() ? 0 : 1);
       break;
     case 'create-admin': {
       const email = (positional[0] ?? '').trim().toLowerCase();
       if (!isValidEmail(email)) throw new Error('Give a valid email address: create-admin you@example.com');
-      if (repo.getAdmin() && !bools.has('force')) {
-        throw new Error('An admin account already exists. Use --force to replace its email and password.');
+      if (repo.hasOwner() && !bools.has('force')) {
+        throw new Error('An owner account already exists. Use --force to replace its email and password.');
       }
       const password = await getPassword();
       if (password.length < 12) throw new Error('Use a password of at least 12 characters.');
-      repo.upsertAdmin(email, await hash(password));
-      console.log(`Admin account saved for ${email}.`);
+      repo.upsertOwner(email, await hash(password));
+      console.log(`Owner account saved for ${email}.`);
       break;
     }
     case 'add-show': {
@@ -125,7 +125,7 @@ async function main(): Promise<void> {
       if (notify && !isValidEmail(notify)) throw new Error('--notify-email is not a valid address.');
       const maxSeconds = Number.parseInt(values.get('max-seconds')?.[0] ?? String(config.maxSecondsDefault), 10);
       if (!Number.isInteger(maxSeconds) || maxSeconds < 5 || maxSeconds > 600) throw new Error('--max-seconds must be 5 to 600.');
-      const show = repo.createShow({ name, allowed_origins: JSON.stringify(origins), notify_email: notify ?? repo.getAdmin()?.email ?? null, max_seconds: maxSeconds });
+      const show = repo.createShow({ name, allowed_origins: JSON.stringify(origins), notify_email: notify ?? repo.firstOwner()?.email ?? null, max_seconds: maxSeconds });
       console.log(`Created "${show.name}" (${show.slug}).`);
       console.log(`Embed code:\n  <script src="${config.appUrl}/embed.js" data-site-key="${show.site_key}" async></script>`);
       if (origins.length === 0) console.log('No allowed sites yet. Add some with: set-origins ' + show.slug + ' https://yoursite.com');

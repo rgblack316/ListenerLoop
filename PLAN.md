@@ -23,8 +23,6 @@ A self-hosted, open-source (AGPL) widget that lets listeners record a voice mess
 
 **Out of scope for v1**
 
-- Multi-user admin accounts (planned for a later phase).
-- Phone-in numbers via Twilio (separate effort, adds cost).
 - Sharing logins or data with the admin's other podcast tools. This is its own repository and its own installation.
 
 ## Decisions locked in
@@ -32,11 +30,11 @@ A self-hosted, open-source (AGPL) widget that lets listeners record a voice mess
 | Area | Decision |
 | --- | --- |
 | Backend | Node.js + TypeScript with Fastify. Workload is I/O-bound, so language speed is a wash; Node gives a mature S3 SDK and one language across server, embed and admin UI. |
-| Database | SQLite (better-sqlite3) for v1, with portable migrations so Postgres is possible later. |
+| Database | SQLite (better-sqlite3) for v1, with append-only migrations. |
 | Audio format | Every upload normalized to MP3 with ffmpeg. The original is kept optionally (config flag). |
 | Storage | Adapter interface with two drivers: `s3` (any S3-compatible service, including Cloudflare R2) preferred, and `local` for forks. |
 | Processing | ffmpeg run inline after upload through a simple in-process queue. No Redis. |
-| Admin auth | Single admin, argon2 password hash, session cookie. Multi-user later. The admin UI is server-rendered pages with htmx for small live updates, with no SPA framework. |
+| Admin auth | Multiple users (owner, editor, viewer) with per-show access, argon2 password hashes, session cookie, optional TOTP. The admin UI is server-rendered pages with htmx for small live updates, with no SPA framework. |
 | Email alerts | SMTP or Resend, chosen by config. |
 | Spam protection | Cloudflare Turnstile is required for public submissions. One app-wide Turnstile key pair, created once for the app's own domain, covers every show; embedding sites need no Turnstile key of their own. There is no per-show override. |
 | Transcription | Deferred to a later phase behind an optional adapter (whisper.cpp or an API). Off by default. |
@@ -152,7 +150,10 @@ The admin is server-rendered, so there is no JSON admin API. Pages and form post
 | `GET /shows/:slug/messages/:id/audio` | Local driver: streamed with HTTP Range. S3 driver: redirect to a signed URL that expires in 5 minutes. Add `?download=1` to download. |
 | `POST /shows/:slug/messages/:id/retry` | Re-run a failed message from its saved original (after fixing the cause, such as raising the show's length limit). |
 | `POST /shows/:slug/messages/:id/resend-alert` | Send the email alert again after a failure. |
-| `GET /settings` | Settings page: email test, storage check, change password, read-only configuration. |
+| `GET /settings` | Settings page: email test, storage check, read-only configuration. |
+| `GET /users`, `GET /users/:id` | Owner only: manage users, invitations and reset links. |
+| `GET /account` | Everyone: name, password, two-step sign-in. |
+| `GET /invite/:token`, `GET /reset/:token` | Public: accept an invitation or choose a new password. |
 | `POST /settings/test-email`, `/settings/test-storage`, `/settings/password` | Send a test email to the admin; write, read and delete a test file in storage; change the admin password (signs out other sessions, throttled). |
 
 A message opened under another show's URL returns 404. Public routes send CORS headers only for the show's allowed origins.
@@ -189,14 +190,13 @@ Server-rendered pages, with htmx for small live updates such as starring or arch
 - **Inbox:** one inbox per show and a combined view; filter by new, starred, archived, failed; newest first; unread indicator; the sender's name appears on every row so you know who left a message before you play it.
 - **Message view:** audio player with speed control, sender details, duration, date, private notes, star, archive, delete, download MP3.
 - **Shows:** create and edit shows, copy the embed snippet, rotate the site key, edit allowed origins and widget text and color, optional per-show Turnstile key.
-- **Settings:** a test-email button, a storage check (write, read, delete a test file), change password, and a read-only view of the configuration. Configuration itself stays in `.env`.
-- **Admin account:** created from the command line (`create-admin`); there is no setup screen.
+- **Settings:** a test-email button, a storage check (write, read, delete a test file), and a read-only view of the configuration. Configuration itself stays in `.env`.
+- **Admin accounts:** the first owner is created from the command line (`create-admin`); there is no setup screen. Owners add others by invitation.
 
 **Planned**
 
 - Search, and bulk actions (zip download, archive, delete).
 - Live widget preview when editing a show.
-- Reply to listeners, then multiple users with access to selected shows only (see Phase 4).
 
 ## Security and abuse protection
 
@@ -325,10 +325,8 @@ Each phase is done only when its acceptance criteria pass.
 - [x] Show cover art from the podcast's RSS feed (optional feed address per show, migration 9): fetched with an SSRF-safe client (public addresses only, redirect, size and time limits), re-encoded to a 256 px JPEG with ffmpeg, stored in the storage driver at `covers/<show>.jpg`, served only to signed-in users, and shown beside the show name in the shows list, home list, inbox and settings. Refresh on save or on request.
 
 - [x] Reply to listeners who chose to share an email address, from the message page in admin. Sent through the configured mail provider from `REPLY_FROM_ADDRESS` (for example replies@listenerloop.app) with the show's name as the display name and the show's email address as Reply-To, so the listener's answer goes straight to the host. The show's email address is now required in show settings. Replies are stored with the message (migration 8), shown as a thread, retryable if sending fails, limited to 10 per message and 30 per hour, and deleted with the message.
-- Multi-user admin with roles and invitations, where a user can be limited to selected shows (`users` and `user_shows` tables; narrow `accessibleShows()` in `src/routes/admin.ts`, which every show, inbox, message and audio route already uses); optional TOTP.
+- [x] Multi-user admin (migration 10). Roles: owner (everything), editor (all message actions on assigned shows), viewer (read-only on assigned shows). Owners invite by emailed link (7 days, invitee sets the password; the link is shown for copying if email is off or fails), make password reset links, enable or disable, remove and re-scope users, and cannot remove the last active owner. Per-show access goes through `accessibleShows()`; message, audio, cover, zip and reply routes all use it. Optional TOTP per user with recovery codes, an owner reset, and a two-step login. Existing single admin becomes the first owner; sessions are cleared once on upgrade.
 - Webhooks and an RSS or JSON export of messages.
-- Phone-in number via Twilio as a separate module.
-- Postgres support.
 
 ## Risks and open questions
 

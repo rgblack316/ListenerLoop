@@ -1,5 +1,6 @@
 import { html, raw, type Raw } from '../lib/html.js';
 import { INBOX_FILTERS, showOrigins, type InboxFilter, type MessageWithShow, type Reply, type Show } from '../db/repo.js';
+import type { Role } from '../db/repo.js';
 import { csrfField, durationText, layout, timeTag } from './layout.js';
 
 const FILTER_LABELS: Record<InboxFilter, string> = {
@@ -12,17 +13,24 @@ const FILTER_LABELS: Record<InboxFilter, string> = {
 };
 
 // ---------------------------------------------------------------- login
-export function loginPage(error?: string): string {
+export function loginPage(error?: string, ticket?: string): string {
   return layout({
     title: 'Sign in',
     body: html`<section class="card narrow">
       <h1>Sign in</h1>
       ${error ? html`<p class="alert" role="alert">${error}</p>` : ''}
-      <form method="post" action="/login" class="stack">
-        <label>Email<input type="email" name="email" autocomplete="username" required autofocus></label>
-        <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
-        <button type="submit" class="btn primary">Sign in</button>
-      </form>
+      ${ticket
+        ? html`<form method="post" action="/login/verify" class="stack">
+            <input type="hidden" name="ticket" value="${ticket}">
+            <label>Authenticator code<input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus></label>
+            <p class="muted">Enter the 6-digit code from your authenticator app, or one of your recovery codes.</p>
+            <button type="submit" class="btn primary">Verify</button>
+          </form>`
+        : html`<form method="post" action="/login" class="stack">
+            <label>Email<input type="email" name="email" autocomplete="username" required autofocus></label>
+            <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
+            <button type="submit" class="btn primary">Sign in</button>
+          </form>`}
     </section>`,
   });
 }
@@ -40,29 +48,32 @@ function snippetHtml(snip: string): Raw {
   }).join(''));
 }
 
-export function messageRow(m: MessageWithShow, snippet?: string): Raw {
+export function messageRow(m: MessageWithShow, snippet?: string, edit = true): Raw {
   const unread = m.status === 'ready' && !m.read_at;
   return html`<li id="row-${m.id}" class="msg${unread ? ' unread' : ''}">
     <input type="checkbox" class="pick" form="bulk" name="ids" value="${m.id}" aria-label="Select message from ${m.sender_name}" ${m.status === 'ready' ? '' : raw('disabled')}>
-    <button class="star${m.starred ? ' on' : ''}" hx-post="${msgBase(m)}/star" hx-target="#row-${m.id}" hx-swap="outerHTML"
-      aria-label="${m.starred ? 'Remove star' : 'Star message'}" aria-pressed="${m.starred ? 'true' : 'false'}">${m.starred ? '★' : '☆'}</button>
+    ${edit
+      ? html`<button class="star${m.starred ? ' on' : ''}" hx-post="${msgBase(m)}/star" hx-target="#row-${m.id}" hx-swap="outerHTML"
+      aria-label="${m.starred ? 'Remove star' : 'Star message'}" aria-pressed="${m.starred ? 'true' : 'false'}">${m.starred ? '★' : '☆'}</button>`
+      : html`<span class="star${m.starred ? ' on' : ''}" role="img" aria-label="${m.starred ? 'Starred' : 'Not starred'}">${m.starred ? '★' : '☆'}</span>`}
     <a class="msg-main" href="${msgBase(m)}">
       <span class="who">${m.sender_name}${unread ? html` <span class="badge new">new</span>` : ''}${m.status === 'failed' ? html` <span class="badge bad">failed</span>` : ''}${m.status === 'processing' ? html` <span class="badge">processing</span>` : ''}${m.status === 'ready' && m.email_error ? html` <span class="badge bad">email failed</span>` : ''}${m.replied_at ? html` <span class="badge">replied</span>` : ''}</span>
       ${m.status === 'failed' ? html`<span class="meta fail">${m.error ?? 'Processing failed.'}</span>` : ''}
       <span class="meta">${m.show_name}${m.duration_seconds !== null ? ` · ${durationText(m.duration_seconds)}` : ''} · ${timeTag(m.created_at)}</span>
       ${snippet ? html`<span class="snippet">${snippetHtml(snippet)}</span>` : ''}
     </a>
-    <span class="row-actions">
+    ${edit ? html`<span class="row-actions">
       ${m.status === 'failed' && m.original_key ? html`<button class="link" hx-post="${msgBase(m)}/retry" hx-target="#row-${m.id}" hx-swap="outerHTML">Retry</button>` : ''}
       <button class="link" hx-post="${msgBase(m)}/archive" hx-target="#row-${m.id}" hx-swap="outerHTML">${m.archived ? 'Unarchive' : 'Archive'}</button>
       <button class="link danger" hx-post="${msgBase(m)}/delete" hx-target="#row-${m.id}" hx-swap="outerHTML"
         hx-confirm="Delete this message?">Delete</button>
-    </span>
+    </span>` : ''}
   </li>`;
 }
 
 export interface InboxView {
   csrf: string;
+  role: Role;
   messages: MessageWithShow[];
   /** Transcript excerpts with match markers, keyed by message id (search only). */
   snippets: Map<string, string>;
@@ -93,11 +104,12 @@ export function inboxPage(v: InboxView): string {
   return layout({
     title: v.show ? v.show.name : 'All messages',
     csrf: v.csrf,
+    role: v.role,
     nav: v.show ? 'shows' : 'inbox',
     body: html`${v.show ? html`<p><a href="/">&larr; All shows</a></p>` : ''}
     <div class="head-row">
       <h1 class="with-cover">${v.show ? coverThumb(v.show, 'lg') : ''}<span>${v.show ? v.show.name : 'All messages'}</span></h1>
-      ${v.show ? html`<a href="/shows/${v.show.slug}/settings">Settings and embed code</a>` : ''}
+      ${v.show && v.role === 'owner' ? html`<a href="/shows/${v.show.slug}/settings">Settings and embed code</a>` : ''}
     </div>
     <div class="toolbar">
       ${v.search
@@ -120,8 +132,8 @@ export function inboxPage(v: InboxView): string {
         </form>`
       : ''}
     ${v.messages.length === 0
-      ? html`<p class="empty">${!v.hasShows ? html`No shows yet. <a href="/shows/new">Add your first show</a> to get an embed snippet.` : v.search ? 'No messages match that search.' : 'No messages here.'}</p>`
-      : html`<ul class="msgs">${v.messages.map((m) => messageRow(m, v.snippets.get(m.id)))}</ul>`}
+      ? html`<p class="empty">${!v.hasShows ? html`${v.role === 'owner' ? html`No shows yet. <a href="/shows/new">Add your first show</a> to get an embed snippet.` : 'You have not been given access to any shows yet. Ask an owner to add you.'}` : v.search ? 'No messages match that search.' : 'No messages here.'}</p>`
+      : html`<ul class="msgs">${v.messages.map((m) => messageRow(m, v.snippets.get(m.id), v.role !== 'viewer'))}</ul>`}
     ${v.pages > 1
       ? html`<nav class="pager" aria-label="Pages">
           ${v.page > 1 ? html`<a href="${inboxUrl(v.show, v.filter, v.page - 1, v.search)}">&larr; Newer</a>` : html`<span></span>`}
@@ -139,10 +151,11 @@ export interface ShowSummary {
 }
 
 /** Landing page: the shows this user can open, with unread counts. */
-export function homePage(shows: ShowSummary[], unreadAll: number, csrf: string): string {
+export function homePage(shows: ShowSummary[], unreadAll: number, csrf: string, role: Role): string {
   return layout({
     title: 'Shows',
     csrf,
+    role,
     nav: 'home',
     body: html`<div class="head-row"><h1>Your shows</h1><a href="/inbox">All messages${unreadAll ? html` <span class="badge new">${unreadAll} new</span>` : ''}</a></div>
     <ul class="msgs">
@@ -181,7 +194,7 @@ export interface ReplyView {
   maxBody: number;
 }
 
-function replyCard(m: MessageWithShow, csrf: string, v: ReplyView): Raw | string {
+function replyCard(m: MessageWithShow, csrf: string, v: ReplyView, role: Role): Raw | string {
   if (m.status !== 'ready') return '';
   return html`<section class="card" id="reply">
       <h2>Reply to ${m.sender_name}</h2>
@@ -193,13 +206,15 @@ function replyCard(m: MessageWithShow, csrf: string, v: ReplyView): Raw | string
               <p class="transcript">${r.body}</p>
               ${r.status === 'failed'
                 ? html`<div class="alert"><p>This reply could not be sent: ${r.error ?? 'unknown error'}</p>
-                    <form method="post" action="${msgBase(m)}/replies/${r.id}/resend">${csrfField(csrf)}<button class="btn">Try again</button></form></div>`
+                    ${role === 'viewer' ? '' : html`<form method="post" action="${msgBase(m)}/replies/${r.id}/resend">${csrfField(csrf)}<button class="btn">Try again</button></form>`}</div>`
                 : ''}
             </li>`,
           )}</ul>`
         : ''}
-      ${v.blockedText
-        ? html`<p class="muted">${v.blockedText}</p>${v.blockedCode === 'no_show_email' ? html`<p><a class="btn" href="/shows/${m.show_slug}/settings">Open show settings</a></p>` : ''}`
+      ${role === 'viewer'
+        ? ''
+        : v.blockedText
+        ? html`<p class="muted">${v.blockedText}</p>${v.blockedCode === 'no_show_email' && role === 'owner' ? html`<p><a class="btn" href="/shows/${m.show_slug}/settings">Open show settings</a></p>` : ''}`
         : html`${v.draft.error ? html`<div class="alert" role="alert"><p>${v.draft.error}</p></div>` : ''}
           <form method="post" action="${msgBase(m)}/reply" class="stack">
             ${csrfField(csrf)}
@@ -211,10 +226,12 @@ function replyCard(m: MessageWithShow, csrf: string, v: ReplyView): Raw | string
     </section>`;
 }
 
-export function messagePage(m: MessageWithShow, csrf: string, flash?: string, transcriptionOn = false, reply?: ReplyView): string {
+export function messagePage(m: MessageWithShow, csrf: string, role: Role, flash?: string, transcriptionOn = false, reply?: ReplyView): string {
+  const edit = role !== 'viewer';
   return layout({
     title: `Message from ${m.sender_name}`,
     csrf,
+    role,
     nav: 'shows',
     body: html`<p><a href="/shows/${m.show_slug}">&larr; Back to ${m.show_name}</a></p>
     <h1>${m.sender_name}</h1>
@@ -235,11 +252,11 @@ export function messagePage(m: MessageWithShow, csrf: string, flash?: string, tr
           ? html`<div class="alert"><p>This message could not be processed: ${m.error ?? 'unknown error'}</p>
               ${m.original_key
                 ? html`<p>The original recording was saved. If the cause was a setting (for example a length limit), change it on the show's settings page, then retry.</p>
-                  <form method="post" action="${msgBase(m)}/retry">${csrfField(csrf)}<button class="btn">Retry processing</button></form>`
+                  ${edit ? html`<form method="post" action="${msgBase(m)}/retry">${csrfField(csrf)}<button class="btn">Retry processing</button></form>` : ''}`
                 : html`<p>The original recording was not saved, so it cannot be retried.</p>`}
             </div>`
           : html`<p class="notice">This message is still being processed. Reload in a moment.</p>`}
-      ${m.status === 'ready' && m.email_error
+      ${edit && m.status === 'ready' && m.email_error
         ? html`<div class="alert"><p>The email alert for this message could not be sent: ${m.email_error}</p>
             <form method="post" action="${msgBase(m)}/resend-alert">${csrfField(csrf)}<button class="btn">Send the alert again</button></form></div>`
         : ''}
@@ -250,11 +267,11 @@ export function messagePage(m: MessageWithShow, csrf: string, flash?: string, tr
         <dt>Email</dt><dd>${m.sender_email ? html`<a href="mailto:${m.sender_email}">${m.sender_email}</a>` : html`<span class="muted">Not shared</span>`}</dd>
         ${m.size_bytes !== null ? html`<dt>Size</dt><dd>${(m.size_bytes / 1024).toFixed(0)} KB</dd>` : ''}
       </dl>
-      <div class="actions">
+      ${edit ? html`<div class="actions">
         <form method="post" action="${msgBase(m)}/star">${csrfField(csrf)}<button class="btn">${m.starred ? '★ Starred' : '☆ Star'}</button></form>
         <form method="post" action="${msgBase(m)}/archive">${csrfField(csrf)}<button class="btn">${m.archived ? 'Unarchive' : 'Archive'}</button></form>
         <form method="post" action="${msgBase(m)}/delete" data-confirm="Delete this message?">${csrfField(csrf)}<button class="btn danger">Delete</button></form>
-      </div>
+      </div>` : ''}
     </section>
     ${m.status === 'ready' && (transcriptionOn || m.transcript_status)
       ? html`<section class="card">
@@ -267,20 +284,22 @@ export function messagePage(m: MessageWithShow, csrf: string, flash?: string, tr
           : m.transcript_status === 'failed'
             ? html`<div class="alert"><p>The transcript could not be made: ${m.transcript_error ?? 'unknown error'}</p></div>`
             : html`<p class="muted">Not transcribed.</p>`}
-      ${transcriptionOn && m.transcript_status !== 'pending'
+      ${edit && transcriptionOn && m.transcript_status !== 'pending'
         ? html`<form method="post" action="${msgBase(m)}/transcribe">${csrfField(csrf)}<button class="btn">${m.transcript_status === 'done' ? 'Transcribe again' : m.transcript_status === 'failed' ? 'Try again' : 'Transcribe this message'}</button></form>`
         : ''}
     </section>`
       : ''}
-    ${reply ? replyCard(m, csrf, reply) : ''}
+    ${reply && (role !== 'viewer' || reply.replies.length) ? replyCard(m, csrf, reply, role) : ''}
     <section class="card">
       <h2>Private notes</h2>
-      <form method="post" action="${msgBase(m)}/notes" class="stack">
+      ${edit
+        ? html`<form method="post" action="${msgBase(m)}/notes" class="stack">
         ${csrfField(csrf)}
         <label class="sr-only" for="notes">Notes</label>
         <textarea id="notes" name="notes" rows="4" maxlength="4000">${m.notes ?? ''}</textarea>
         <button class="btn" type="submit">Save notes</button>
-      </form>
+      </form>`
+        : m.notes ? html`<p class="transcript">${m.notes}</p>` : html`<p class="muted">No notes.</p>`}
     </section>`,
   });
 }
@@ -359,6 +378,7 @@ export function showFormPage(opts: {
   return layout({
     title: show ? `Edit ${show.name}` : 'Add show',
     csrf: opts.csrf,
+    role: 'owner',
     nav: 'shows',
     body: html`<p><a href="/shows">&larr; Back to shows</a></p>
     <h1 class="with-cover">${show ? coverThumb(show, 'lg') : ''}<span>${show ? `Edit ${show.name}` : 'Add show'}</span></h1>
@@ -430,11 +450,11 @@ export interface SettingsView {
   turnstile: { siteKey: string };
   limits: { rateLimitPerHour: number; rateLimitPerShowHour: number; dailyCapPerShow: number; maxUploadMb: number; maxSecondsDefault: number; retentionDays: number; keepOriginals: boolean; mp3BitrateKbps: number };
   /** Outcome of the button that was just pressed. */
-  result?: { section: 'email' | 'storage' | 'password'; ok: boolean; message: string; steps?: string[] };
+  result?: { section: 'email' | 'storage'; ok: boolean; message: string; steps?: string[] };
 }
 
 export function settingsPage(v: SettingsView): string {
-  const outcome = (section: 'email' | 'storage' | 'password'): Raw => {
+  const outcome = (section: 'email' | 'storage'): Raw => {
     const r = v.result;
     if (!r || r.section !== section) return raw('');
     return html`<div class="${r.ok ? 'notice' : 'alert'}" role="${r.ok ? 'status' : 'alert'}"><p>${r.message}</p>${r.steps ? html`<ul>${r.steps.map((s) => html`<li>${s}</li>`)}</ul>` : ''}</div>`;
@@ -443,6 +463,7 @@ export function settingsPage(v: SettingsView): string {
   return layout({
     title: 'Settings',
     csrf: v.csrf,
+    role: 'owner',
     nav: 'settings',
     body: html`<h1>Settings</h1>
 
@@ -452,7 +473,7 @@ export function settingsPage(v: SettingsView): string {
       <dl class="details">
         <dt>Provider</dt><dd>${v.mail.provider}${v.mail.configured ? '' : html` <span class="muted">(not configured: alerts are off)</span>`}</dd>
         <dt>Sent from</dt><dd>${v.mail.from || html`<span class="muted">Not set</span>`}</dd>
-        <dt>Admin email</dt><dd>${v.adminEmail}</dd>
+        <dt>Your email</dt><dd>${v.adminEmail}</dd>
       </dl>
       <form method="post" action="/settings/test-email">${csrfField(v.csrf)}
         <button class="btn" type="submit" ${v.mail.configured ? '' : raw('disabled')}>Send a test email to ${v.adminEmail}</button>
@@ -470,18 +491,6 @@ export function settingsPage(v: SettingsView): string {
         <button class="btn" type="submit">Test storage</button>
       </form>
       <p class="muted">Writes, reads and deletes a tiny test file to confirm the credentials and permissions work.</p>
-    </section>
-
-    <section class="card">
-      <h2>Change password</h2>
-      ${outcome('password')}
-      <form method="post" action="/settings/password" class="stack">${csrfField(v.csrf)}
-        <label>Current password<input type="password" name="current" autocomplete="current-password" required></label>
-        <label>New password (at least 12 characters)<input type="password" name="next" autocomplete="new-password" minlength="12" required></label>
-        <label>Repeat the new password<input type="password" name="confirm" autocomplete="new-password" minlength="12" required></label>
-        <button class="btn" type="submit">Change password</button>
-        <small>Other signed-in sessions are signed out.</small>
-      </form>
     </section>
 
     <section class="card">

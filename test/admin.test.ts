@@ -580,16 +580,16 @@ describe('admin: settings page', () => {
 
   it('changes the password, signs out other sessions and rejects bad attempts', async () => {
     const other = await login(h);
-    const wrong = await formPost(h, '/settings/password', session, { current: 'not the password', next: 'a brand new password', confirm: 'a brand new password' });
+    const wrong = await formPost(h, '/account/password', session, { current: 'not the password', next: 'a brand new password', confirm: 'a brand new password' });
     expect(wrong.statusCode).toBe(401);
-    const short = await formPost(h, '/settings/password', session, { current: ADMIN_PASSWORD, next: 'short', confirm: 'short' });
+    const short = await formPost(h, '/account/password', session, { current: ADMIN_PASSWORD, next: 'short', confirm: 'short' });
     expect(short.statusCode).toBe(400);
-    const mismatch = await formPost(h, '/settings/password', session, { current: ADMIN_PASSWORD, next: 'a brand new password', confirm: 'a different one!!' });
+    const mismatch = await formPost(h, '/account/password', session, { current: ADMIN_PASSWORD, next: 'a brand new password', confirm: 'a different one!!' });
     expect(mismatch.body).toContain('did not match');
-    const same = await formPost(h, '/settings/password', session, { current: ADMIN_PASSWORD, next: ADMIN_PASSWORD, confirm: ADMIN_PASSWORD });
+    const same = await formPost(h, '/account/password', session, { current: ADMIN_PASSWORD, next: ADMIN_PASSWORD, confirm: ADMIN_PASSWORD });
     expect(same.body).toContain('different');
 
-    const ok = await formPost(h, '/settings/password', session, { current: ADMIN_PASSWORD, next: 'a brand new password', confirm: 'a brand new password' });
+    const ok = await formPost(h, '/account/password', session, { current: ADMIN_PASSWORD, next: 'a brand new password', confirm: 'a brand new password' });
     expect(ok.statusCode).toBe(200);
     expect(ok.body).toContain('Password changed');
     expect((await get('/inbox')).statusCode).toBe(200);

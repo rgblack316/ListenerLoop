@@ -1,15 +1,23 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { AppContext } from './context.js';
+import type { Role } from './db/repo.js';
 import { hmacHex, randomToken, safeEqual, sha256hex } from './lib/util.js';
 
 export const SESSION_COOKIE = 'll_session';
 const SESSION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
 export interface AdminSession {
-  adminId: number;
+  userId: string;
+  email: string;
+  name: string;
+  role: Role;
   tokenHash: string;
   csrf: string;
 }
+
+export const isOwner = (s: AdminSession): boolean => s.role === 'owner';
+/** Owners and editors may change messages; viewers are read-only. */
+export const canEdit = (s: AdminSession): boolean => s.role !== 'viewer';
 
 export function csrfFor(ctx: AppContext, tokenHash: string): string {
   return hmacHex(ctx.config.sessionSecret, `csrf:${tokenHash}`).slice(0, 32);
@@ -21,12 +29,14 @@ export function getSession(ctx: AppContext, req: FastifyRequest): AdminSession |
   const tokenHash = sha256hex(token);
   const row = ctx.repo.getSession(tokenHash);
   if (!row || row.expires_at < new Date().toISOString()) return null;
-  return { adminId: row.admin_id, tokenHash, csrf: csrfFor(ctx, tokenHash) };
+  const user = ctx.repo.getUser(row.user_id);
+  if (!user || user.disabled_at) return null;
+  return { userId: user.id, email: user.email, name: user.name, role: user.role, tokenHash, csrf: csrfFor(ctx, tokenHash) };
 }
 
-export function startSession(ctx: AppContext, reply: FastifyReply, adminId: number): void {
+export function startSession(ctx: AppContext, reply: FastifyReply, userId: string): void {
   const token = randomToken(32);
-  ctx.repo.createSession(sha256hex(token), adminId, SESSION_TTL_MS);
+  ctx.repo.createSession(sha256hex(token), userId, SESSION_TTL_MS);
   void reply.setCookie(SESSION_COOKIE, token, {
     path: '/',
     httpOnly: true,

@@ -28,12 +28,14 @@
     "fastify": "^5.12.7",
     "htmx.org": "^2.0.11",
     "nodemailer": "^10.2.1",
+    "qrcode": "^1.5.4",
     "yazl": "^3.3.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.5",
     "@types/nodemailer": "^8.0.2",
+    "@types/qrcode": "^1.5.6",
     "@types/yazl": "^3.3.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",

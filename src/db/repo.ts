@@ -4,6 +4,37 @@ import { randomToken, slugify, ulid } from '../lib/util.js';
 export type NoiseReduction = 'off' | 'light' | 'strong';
 export const NOISE_REDUCTION_LEVELS: NoiseReduction[] = ['off', 'light', 'strong'];
 
+export type Role = 'owner' | 'editor' | 'viewer';
+export const ROLES: Role[] = ['owner', 'editor', 'viewer'];
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  password_hash: string;
+  role: Role;
+  disabled_at: string | null;
+  totp_secret: string | null;
+  totp_enabled: number;
+  totp_last_step: number | null;
+  created_at: string;
+  last_login_at: string | null;
+}
+
+export interface Invite {
+  id: string;
+  token_hash: string;
+  kind: 'invite' | 'reset';
+  email: string;
+  role: Role | null;
+  show_ids: string; // JSON array
+  user_id: string | null;
+  created_by: string | null;
+  created_at: string;
+  expires_at: string;
+  used_at: string | null;
+}
+
 export interface Show {
   id: string;
   name: string;
@@ -237,7 +268,7 @@ export class Repo {
     this.db.prepare(`UPDATE messages SET ${sets} WHERE id = @__id`).run({ ...fields, __id: id });
   }
 
-  private filterSql(filter: InboxFilter, showId?: string, search?: string): { where: string; params: Record<string, unknown> } {
+  private filterSql(filter: InboxFilter, showId?: string | string[], search?: string): { where: string; params: Record<string, unknown> } {
     const clauses = ['m.deleted_at IS NULL'];
     const params: Record<string, unknown> = {};
     const fts = search ? ftsQuery(search) : null;
@@ -245,7 +276,13 @@ export class Repo {
       clauses.push('m.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH @fts)');
       params.fts = fts;
     }
-    if (showId) {
+    if (Array.isArray(showId)) {
+      if (!showId.length) clauses.push('0');
+      else {
+        clauses.push(`m.show_id IN (${showId.map((_, i) => `@sid${i}`).join(', ')})`);
+        showId.forEach((id, i) => (params[`sid${i}`] = id));
+      }
+    } else if (showId) {
       clauses.push('m.show_id = @show_id');
       params.show_id = showId;
     }
@@ -271,7 +308,7 @@ export class Repo {
     return { where: clauses.join(' AND '), params };
   }
 
-  listMessages(filter: InboxFilter, opts: { showId?: string; limit: number; offset: number; search?: string }): MessageWithShow[] {
+  listMessages(filter: InboxFilter, opts: { showId?: string | string[]; limit: number; offset: number; search?: string }): MessageWithShow[] {
     const { where, params } = this.filterSql(filter, opts.showId, opts.search);
     return this.db
       .prepare(
@@ -281,7 +318,7 @@ export class Repo {
       .all({ ...params, limit: opts.limit, offset: opts.offset }) as MessageWithShow[];
   }
 
-  countMessages(filter: InboxFilter, showId?: string, search?: string): number {
+  countMessages(filter: InboxFilter, showId?: string | string[], search?: string): number {
     const { where, params } = this.filterSql(filter, showId, search);
     const row = this.db.prepare(`SELECT COUNT(*) AS n FROM messages m WHERE ${where}`).get(params) as { n: number };
     return row.n;
@@ -375,42 +412,153 @@ export class Repo {
     this.db.prepare('DELETE FROM messages WHERE id = ?').run(id);
   }
 
-  // ---- admin + sessions ----
-  getAdmin(): { id: number; email: string; password_hash: string } | undefined {
-    return this.db.prepare('SELECT id, email, password_hash FROM admin WHERE id = 1').get() as
-      | { id: number; email: string; password_hash: string }
-      | undefined;
+  // ---- users + sessions ----
+  firstOwner(): User | undefined {
+    return this.db.prepare("SELECT * FROM users WHERE role = 'owner' AND disabled_at IS NULL ORDER BY created_at LIMIT 1").get() as User | undefined;
   }
 
-  upsertAdmin(email: string, passwordHash: string): void {
+  hasOwner(): boolean {
+    return !!this.firstOwner();
+  }
+
+  getUser(id: string): User | undefined {
+    return this.db.prepare('SELECT * FROM users WHERE id = ?').get(id) as User | undefined;
+  }
+
+  getUserByEmail(email: string): User | undefined {
+    return this.db.prepare('SELECT * FROM users WHERE email = ?').get(email.trim()) as User | undefined;
+  }
+
+  listUsers(): User[] {
+    return this.db.prepare('SELECT * FROM users ORDER BY created_at').all() as User[];
+  }
+
+  countActiveOwners(): number {
+    return (this.db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'owner' AND disabled_at IS NULL").get() as { n: number }).n;
+  }
+
+  createUser(u: { email: string; name?: string; passwordHash: string; role: Role; showIds?: string[] }): User {
+    const id = randomToken(16);
+    this.db.transaction(() => {
+      this.db
+        .prepare('INSERT INTO users (id, email, name, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(id, u.email.trim(), (u.name ?? '').trim(), u.passwordHash, u.role, nowIso());
+      this.setUserShows(id, u.showIds ?? []);
+    })();
+    return this.getUser(id)!;
+  }
+
+  /** Creates the owner, or replaces the first owner's email and password (CLI). */
+  upsertOwner(email: string, passwordHash: string): void {
+    const owner = this.firstOwner();
+    if (!owner) {
+      this.createUser({ email, passwordHash, role: 'owner' });
+      return;
+    }
+    this.db.prepare('UPDATE users SET email = ?, password_hash = ?, disabled_at = NULL WHERE id = ?').run(email.trim(), passwordHash, owner.id);
+    this.deleteUserSessions(owner.id);
+  }
+
+  updateUser(id: string, fields: Partial<Pick<User, 'email' | 'name' | 'role' | 'password_hash' | 'disabled_at' | 'last_login_at' | 'totp_secret' | 'totp_enabled' | 'totp_last_step'>>): void {
+    const keys = Object.keys(fields);
+    if (!keys.length) return;
+    const sets = keys.map((k) => `${k} = @${k}`).join(', ');
+    this.db.prepare(`UPDATE users SET ${sets} WHERE id = @__id`).run({ ...fields, __id: id });
+  }
+
+  deleteUser(id: string): void {
+    this.db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  }
+
+  userShowIds(userId: string): string[] {
+    return (this.db.prepare('SELECT show_id FROM user_shows WHERE user_id = ?').all(userId) as { show_id: string }[]).map((r) => r.show_id);
+  }
+
+  setUserShows(userId: string, showIds: string[]): void {
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM user_shows WHERE user_id = ?').run(userId);
+      const ins = this.db.prepare('INSERT OR IGNORE INTO user_shows (user_id, show_id) SELECT ?, id FROM shows WHERE id = ?');
+      for (const sid of showIds) ins.run(userId, sid);
+    })();
+  }
+
+  // invites + password-reset links (one table, told apart by kind)
+  createInvite(i: { kind: 'invite' | 'reset'; email: string; role?: Role; showIds?: string[]; userId?: string; createdBy?: string; tokenHash: string; ttlMs: number }): string {
+    const id = randomToken(8);
+    const now = Date.now();
+    if (i.kind === 'invite') this.db.prepare("DELETE FROM invites WHERE kind = 'invite' AND email = ? AND used_at IS NULL").run(i.email.trim());
+    else this.db.prepare("DELETE FROM invites WHERE kind = 'reset' AND user_id = ? AND used_at IS NULL").run(i.userId);
     this.db
       .prepare(
-        `INSERT INTO admin (id, email, password_hash, created_at) VALUES (1, @email, @hash, @at)
-         ON CONFLICT(id) DO UPDATE SET email = @email, password_hash = @hash`,
+        `INSERT INTO invites (id, token_hash, kind, email, role, show_ids, user_id, created_by, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run({ email, hash: passwordHash, at: nowIso() });
+      .run(id, i.tokenHash, i.kind, i.email.trim(), i.role ?? null, JSON.stringify(i.showIds ?? []), i.userId ?? null, i.createdBy ?? null, new Date(now).toISOString(), new Date(now + i.ttlMs).toISOString());
+    return id;
   }
 
-  createSession(tokenHash: string, adminId: number, ttlMs: number): void {
+  /** The unused, unexpired invite or reset link behind a token hash. */
+  findInvite(tokenHash: string): Invite | undefined {
+    return this.db
+      .prepare('SELECT * FROM invites WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?')
+      .get(tokenHash, nowIso()) as Invite | undefined;
+  }
+
+  pendingInvites(): Invite[] {
+    return this.db
+      .prepare("SELECT * FROM invites WHERE kind = 'invite' AND used_at IS NULL AND expires_at > ? ORDER BY created_at DESC")
+      .all(nowIso()) as Invite[];
+  }
+
+  getInvite(id: string): Invite | undefined {
+    return this.db.prepare('SELECT * FROM invites WHERE id = ?').get(id) as Invite | undefined;
+  }
+
+  markInviteUsed(id: string): void {
+    this.db.prepare('UPDATE invites SET used_at = ? WHERE id = ?').run(nowIso(), id);
+  }
+
+  deleteInvite(id: string): void {
+    this.db.prepare('DELETE FROM invites WHERE id = ?').run(id);
+  }
+
+  // recovery codes for two-step sign-in
+  replaceRecoveryCodes(userId: string, hashes: string[]): void {
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM recovery_codes WHERE user_id = ?').run(userId);
+      const ins = this.db.prepare('INSERT INTO recovery_codes (user_id, code_hash) VALUES (?, ?)');
+      for (const h of hashes) ins.run(userId, h);
+    })();
+  }
+
+  /** Marks a recovery code used. False if it was wrong or already spent. */
+  useRecoveryCode(userId: string, hash: string): boolean {
+    return this.db.prepare('UPDATE recovery_codes SET used_at = ? WHERE user_id = ? AND code_hash = ? AND used_at IS NULL').run(nowIso(), userId, hash).changes > 0;
+  }
+
+  unusedRecoveryCodes(userId: string): number {
+    return (this.db.prepare('SELECT COUNT(*) AS n FROM recovery_codes WHERE user_id = ? AND used_at IS NULL').get(userId) as { n: number }).n;
+  }
+
+  createSession(tokenHash: string, userId: string, ttlMs: number): void {
     const now = Date.now();
     this.db
-      .prepare('INSERT INTO sessions (token_hash, admin_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
-      .run(tokenHash, adminId, new Date(now).toISOString(), new Date(now + ttlMs).toISOString());
+      .prepare('INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
+      .run(tokenHash, userId, new Date(now).toISOString(), new Date(now + ttlMs).toISOString());
   }
 
-  getSession(tokenHash: string): { admin_id: number; expires_at: string } | undefined {
-    return this.db.prepare('SELECT admin_id, expires_at FROM sessions WHERE token_hash = ?').get(tokenHash) as
-      | { admin_id: number; expires_at: string }
+  getSession(tokenHash: string): { user_id: string; expires_at: string } | undefined {
+    return this.db.prepare('SELECT user_id, expires_at FROM sessions WHERE token_hash = ?').get(tokenHash) as
+      | { user_id: string; expires_at: string }
       | undefined;
+  }
+
+  deleteUserSessions(userId: string, exceptTokenHash?: string): void {
+    this.db.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash != ?').run(userId, exceptTokenHash ?? '');
   }
 
   deleteSession(tokenHash: string): void {
     this.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash);
-  }
-
-  /** Signs out every session except the one given (used after a password change). */
-  deleteOtherSessions(keepTokenHash: string): void {
-    this.db.prepare('DELETE FROM sessions WHERE token_hash != ?').run(keepTokenHash);
   }
 
   deleteExpiredSessions(): void {

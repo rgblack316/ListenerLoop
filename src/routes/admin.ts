@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { hash, verify } from '@node-rs/argon2';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
+  canEdit,
   csrfValid,
+  isOwner,
   endSession,
   getSession,
   LoginThrottle,
@@ -38,6 +40,9 @@ import {
   type Show,
   ftsQuery,
 } from '../db/repo.js';
+import { registerUserRoutes } from './users.js';
+import { hashRecoveryCode, verifyTotp } from '../totp.js';
+import { hmacHex, safeEqual } from '../lib/util.js';
 import { cleanText, isValidEmail, parseRange, randomToken, safeFilePart, slugify, ulid } from '../lib/util.js';
 import { homePage, inboxPage, type ReplyView, loginPage, messagePage, messageRow, settingsPage, showFormPage, showsPage, type SettingsView, type ShowFormValues } from '../views/pages.js';
 
@@ -127,9 +132,32 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
       return handler(req, reply, session);
     });
 
+  const forbidden = (reply: FastifyReply): FastifyReply => reply.code(403).type('text/plain').send('You do not have permission to do that.');
+  /** State-changing request that needs the editor or owner role. */
+  const editing = (handler: Handler) => mutating((req, reply, session) => (canEdit(session) ? handler(req, reply, session) : forbidden(reply)));
+  const ownerAuthed = (handler: Handler) => authed((req, reply, session) => (isOwner(session) ? handler(req, reply, session) : forbidden(reply)));
+  const ownerMutating = (handler: Handler) => mutating((req, reply, session) => (isOwner(session) ? handler(req, reply, session) : forbidden(reply)));
+
   const isHtmx = (req: FastifyRequest): boolean => req.headers['hx-request'] === 'true';
 
   // ---------------------------------------------------------------- auth
+  const TICKET_MS = 5 * 60 * 1000;
+  const signTicket = (userId: string): string => {
+    const exp = String(Date.now() + TICKET_MS);
+    return `${userId}.${exp}.${hmacHex(config.sessionSecret, `ticket:${userId}:${exp}`)}`;
+  };
+  const readTicket = (ticket: string): string | null => {
+    const [userId, exp, mac] = ticket.split('.');
+    if (!userId || !exp || !mac || Number(exp) < Date.now()) return null;
+    return safeEqual(hmacHex(config.sessionSecret, `ticket:${userId}:${exp}`), mac) ? userId : null;
+  };
+  const finishLogin = (req: FastifyRequest, reply: FastifyReply, userId: string): FastifyReply => {
+    throttle.clear(req.ip);
+    repo.updateUser(userId, { last_login_at: new Date().toISOString() });
+    startSession(ctx, reply, userId);
+    return reply.redirect('/');
+  };
+
   app.get('/login', (req, reply) => {
     if (getSession(ctx, req)) return reply.redirect('/');
     return page(reply, loginPage());
@@ -140,21 +168,41 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     if (throttle.blocked(req.ip)) return page(reply, loginPage('Too many attempts. Please wait a few minutes and try again.'), 429);
     const email = field(req.body, 'email').trim().toLowerCase();
     const password = field(req.body, 'password');
-    const admin = repo.getAdmin();
-    const emailMatches = !!admin && admin.email.toLowerCase() === email;
+    const user = repo.getUserByEmail(email);
+    const usable = !!user && !user.disabled_at;
     let ok = false;
     try {
-      ok = await verify(emailMatches && admin ? admin.password_hash : await dummyHash, password);
+      ok = await verify(usable && user ? user.password_hash : await dummyHash, password);
     } catch {
       ok = false;
     }
-    if (!ok || !emailMatches || !admin) {
+    if (!ok || !usable || !user) {
       throttle.fail(req.ip);
       return page(reply, loginPage('That email and password do not match.'), 401);
     }
-    throttle.clear(req.ip);
-    startSession(ctx, reply, admin.id);
-    return reply.redirect('/');
+    if (user.totp_enabled) return page(reply, loginPage(undefined, signTicket(user.id)));
+    return finishLogin(req, reply, user.id);
+  });
+
+  // Second step for users with two-step sign-in on. The ticket proves the password step passed.
+  app.post('/login/verify', (req, reply) => {
+    if (!sameOrigin(req)) return reply.code(403).type('text/plain').send('Forbidden');
+    if (throttle.blocked(req.ip)) return page(reply, loginPage('Too many attempts. Please wait a few minutes and try again.'), 429);
+    const ticket = field(req.body, 'ticket');
+    const userId = readTicket(ticket);
+    const user = userId ? repo.getUser(userId) : undefined;
+    if (!user || user.disabled_at || !user.totp_enabled || !user.totp_secret) {
+      return page(reply, loginPage('That sign-in expired. Please start again.'), 401);
+    }
+    const code = field(req.body, 'code').trim();
+    const step = verifyTotp(user.totp_secret, code, user.totp_last_step);
+    if (step !== null) {
+      repo.updateUser(user.id, { totp_last_step: step });
+      return finishLogin(req, reply, user.id);
+    }
+    if (repo.useRecoveryCode(user.id, hashRecoveryCode(code))) return finishLogin(req, reply, user.id);
+    throttle.fail(req.ip);
+    return page(reply, loginPage('That code is not right. Try again, or use a recovery code.', ticket), 401);
   });
 
   app.post(
@@ -166,9 +214,16 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
   );
 
   // ---------------------------------------------------------------- home and inboxes
-  // Every show the signed-in user may open. Today the single admin sees all shows; when multi-user
-  // arrives, this is the one place that narrows the list, and every route below goes through it.
-  const accessibleShows = (_session: AdminSession): Show[] => repo.listShows();
+  // Every show the signed-in user may open: owners see all, everyone else sees the shows they were given.
+  // Every route below goes through this, so access is decided in exactly one place.
+  const accessibleShows = (session: AdminSession): Show[] => {
+    const all = repo.listShows();
+    if (isOwner(session)) return all;
+    const mine = new Set(repo.userShowIds(session.userId));
+    return all.filter((sh) => mine.has(sh.id));
+  };
+  /** The show ids to query for the "all messages" views. */
+  const scopeIds = (session: AdminSession): string[] => accessibleShows(session).map((sh) => sh.id);
   const showFor = (req: FastifyRequest, session: AdminSession): Show | undefined => {
     const { slug } = req.params as { slug: string };
     return accessibleShows(session).find((s) => s.slug === slug);
@@ -179,14 +234,14 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     '/',
     authed((_req, reply, session) => {
       const shows = accessibleShows(session);
-      if (shows.length === 0) return reply.redirect('/shows/new');
+      if (shows.length === 0 && isOwner(session)) return reply.redirect('/shows/new');
       if (shows.length === 1) return reply.redirect(`/shows/${shows[0]!.slug}`);
       const summaries = shows.map((show) => ({
         show,
         unread: repo.countMessages('new', show.id),
         total: repo.countMessages('inbox', show.id),
       }));
-      return page(reply, homePage(summaries, repo.countMessages('new'), session.csrf));
+      return page(reply, homePage(summaries, repo.countMessages('new', scopeIds(session)), session.csrf, session.role));
     }),
   );
 
@@ -196,7 +251,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     const searching = ftsQuery(search) !== null;
     // A search looks through everything in this inbox, whichever tab was open.
     const filter: InboxFilter = searching ? 'all' : INBOX_FILTERS.includes(q.filter as InboxFilter) ? (q.filter as InboxFilter) : 'inbox';
-    const showId = show?.id;
+    const showId = show ? show.id : scopeIds(session);
     const total = repo.countMessages(filter, showId, searching ? search : undefined);
     const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
     const pageNo = Math.min(Math.max(1, Number.parseInt(q.page ?? '1', 10) || 1), pages);
@@ -205,7 +260,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     const counts = Object.fromEntries(INBOX_FILTERS.map((f) => [f, repo.countMessages(f, showId)])) as Record<InboxFilter, number>;
     return page(
       reply,
-      inboxPage({ csrf: session.csrf, messages, snippets, search: searching ? search : '', filter, show, hasShows: accessibleShows(session).length > 0, counts, page: pageNo, pages, total }),
+      inboxPage({ csrf: session.csrf, role: session.role, messages, snippets, search: searching ? search : '', filter, show, hasShows: accessibleShows(session).length > 0, counts, page: pageNo, pages, total }),
     );
   };
 
@@ -269,7 +324,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
       if (!m) return notFound(reply);
       if (m.status === 'ready' && !m.read_at) repo.updateMessage(m.id, { read_at: new Date().toISOString() });
       const flash = FLASH[(req.query as { flash?: string }).flash ?? ''];
-      return page(reply, messagePage(m, session.csrf, flash, transcriptionAvailable(ctx), replyView(m)));
+      return page(reply, messagePage(m, session.csrf, session.role, flash, transcriptionAvailable(ctx), replyView(m)));
     }),
   );
 
@@ -280,7 +335,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.post(
     '/shows/:slug/messages/:id/star',
-    mutating((req, reply, session) => {
+    editing((req, reply, session) => {
       const m = messageFor(req, session);
       if (!m) return notFound(reply);
       repo.updateMessage(m.id, { starred: m.starred ? 0 : 1 });
@@ -290,7 +345,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.post(
     '/shows/:slug/messages/:id/archive',
-    mutating((req, reply, session) => {
+    editing((req, reply, session) => {
       const m = messageFor(req, session);
       if (!m) return notFound(reply);
       repo.updateMessage(m.id, { archived: m.archived ? 0 : 1 });
@@ -301,7 +356,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.post(
     '/shows/:slug/messages/:id/delete',
-    mutating(async (req, reply, session) => {
+    editing(async (req, reply, session) => {
       const m = messageFor(req, session);
       if (!m) return notFound(reply);
       // Hide it at once, then remove the audio and the record; a failed removal is retried by the hourly sweep.
@@ -314,7 +369,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.post(
     '/shows/:slug/messages/:id/retry',
-    mutating(async (req, reply, session) => {
+    editing(async (req, reply, session) => {
       const m = messageFor(req, session);
       if (!m) return notFound(reply);
       const result = await retryMessage(ctx, m);
@@ -329,7 +384,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.post(
     '/shows/:slug/messages/:id/resend-alert',
-    mutating(async (req, reply, session) => {
+    editing(async (req, reply, session) => {
       const m = messageFor(req, session);
       if (!m) return notFound(reply);
       if (m.status === 'ready') await notifyNewMessage(ctx, m.id);
@@ -339,13 +394,13 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.post(
     '/shows/:slug/messages/:id/reply',
-    mutating(async (req, reply, session) => {
+    editing(async (req, reply, session) => {
       const m = messageFor(req, session);
       if (!m) return notFound(reply);
       const subject = cleanSubject(field(req.body, 'subject')) || defaultReplySubject(m.show_name);
       const body = field(req.body, 'body').replace(/\r\n/g, '\n').trim();
       const refuse = (error: string): FastifyReply =>
-        page(reply, messagePage(m, session.csrf, undefined, transcriptionAvailable(ctx), replyView(m, { subject, body, error })), 400);
+        page(reply, messagePage(m, session.csrf, session.role, undefined, transcriptionAvailable(ctx), replyView(m, { subject, body, error })), 400);
       const blocked = replyBlocked(ctx, m);
       if (blocked) return refuse(REPLY_BLOCK_TEXT[blocked]);
       if (!body) return refuse('Write your reply first.');
@@ -359,7 +414,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.post(
     '/shows/:slug/messages/:id/replies/:rid/resend',
-    mutating(async (req, reply, session) => {
+    editing(async (req, reply, session) => {
       const m = messageFor(req, session);
       const prior = m ? repo.getReply((req.params as { rid: string }).rid) : undefined;
       if (!m || !prior || prior.message_id !== m.id) return notFound(reply);
@@ -376,7 +431,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.post(
     '/shows/:slug/messages/:id/transcribe',
-    mutating((req, reply, session) => {
+    editing((req, reply, session) => {
       const m = messageFor(req, session);
       if (!m) return notFound(reply);
       if (m.transcript_status === 'pending') return reply.redirect(`${here(m)}?flash=transcribing`);
@@ -401,7 +456,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.post(
     '/shows/:slug/messages/:id/notes',
-    mutating((req, reply, session) => {
+    editing((req, reply, session) => {
       const m = messageFor(req, session);
       if (!m) return notFound(reply);
       repo.updateMessage(m.id, { notes: field(req.body, 'notes').slice(0, 4000) || null });
@@ -448,11 +503,9 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
   );
 
   // ---------------------------------------------------------------- settings
-  const pwThrottle = new LoginThrottle();
-
   const settingsView = (session: AdminSession, result?: SettingsView['result']): SettingsView => ({
     csrf: session.csrf,
-    adminEmail: repo.getAdmin()?.email ?? '',
+    adminEmail: session.email,
     appUrl: config.appUrl,
     version: appVersion(),
     mail: { provider: config.mail.provider, configured: !!ctx.mailer, from: config.mail.from },
@@ -474,12 +527,12 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     result,
   });
 
-  app.get('/settings', authed((_req, reply, session) => page(reply, settingsPage(settingsView(session)))));
+  app.get('/settings', ownerAuthed((_req, reply, session) => page(reply, settingsPage(settingsView(session)))));
 
   app.post(
     '/settings/test-email',
-    mutating(async (_req, reply, session) => {
-      const to = repo.getAdmin()?.email;
+    ownerMutating(async (_req, reply, session) => {
+      const to = session.email;
       if (!ctx.mailer || !to) return page(reply, settingsPage(settingsView(session, { section: 'email', ok: false, message: 'Email is not configured. Set MAIL_PROVIDER and its settings in .env.' })));
       try {
         await ctx.mailer.send({ to, subject: 'ListenerLoop test email', text: `This is a test from ${config.appUrl}.\n\nIf you can read this, email alerts will reach you.` });
@@ -494,7 +547,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.post(
     '/settings/test-storage',
-    mutating(async (_req, reply, session) => {
+    ownerMutating(async (_req, reply, session) => {
       const key = `healthcheck/${ulid()}.txt`;
       const body = Buffer.from('ListenerLoop storage check');
       const steps: string[] = [];
@@ -520,34 +573,8 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     }),
   );
 
-  app.post(
-    '/settings/password',
-    mutating(async (req, reply, session) => {
-      const fail = (message: string, status = 400) => page(reply, settingsPage(settingsView(session, { section: 'password', ok: false, message })), status);
-      if (pwThrottle.blocked(req.ip)) return fail('Too many attempts. Please wait a few minutes and try again.', 429);
-      const admin = repo.getAdmin();
-      const current = field(req.body, 'current');
-      const next = field(req.body, 'next');
-      const confirm = field(req.body, 'confirm');
-      let ok = false;
-      try {
-        ok = !!admin && (await verify(admin.password_hash, current));
-      } catch {
-        ok = false;
-      }
-      if (!ok || !admin) {
-        pwThrottle.fail(req.ip);
-        return fail('The current password is not right.', 401);
-      }
-      pwThrottle.clear(req.ip);
-      if (next.length < 12) return fail('Use a new password of at least 12 characters.');
-      if (next !== confirm) return fail('The new passwords did not match.');
-      if (next === current) return fail('Choose a password that is different from the current one.');
-      repo.upsertAdmin(admin.email, await hash(next));
-      repo.deleteOtherSessions(session.tokenHash);
-      return page(reply, settingsPage(settingsView(session, { section: 'password', ok: true, message: 'Password changed. Other sessions were signed out.' })));
-    }),
-  );
+  // User management, account and sign-in links live in routes/users.ts
+  registerUserRoutes(app, ctx, { authed, mutating, ownerAuthed, ownerMutating, page, sameOrigin, field, forbidden, accessibleShows, notFound });
 
   // ---------------------------------------------------------------- shows
   const blankValues = (): ShowFormValues => ({
@@ -658,7 +685,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.get(
     '/shows',
-    authed((req, reply, session) => {
+    ownerAuthed((req, reply, session) => {
       const flash = FLASH[(req.query as { flash?: string }).flash ?? ''];
       return page(reply, showsPage(accessibleShows(session), config.appUrl, session.csrf, flash));
     }),
@@ -666,14 +693,14 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.get(
     '/shows/new',
-    authed((_req, reply, session) =>
+    ownerAuthed((_req, reply, session) =>
       page(reply, showFormPage({ csrf: session.csrf, show: null, values: blankValues(), errors: [], maxSecondsLimit: MAX_SECONDS_LIMIT, transcriptionOn: transcriptionAvailable(ctx) })),
     ),
   );
 
   app.post(
     '/shows',
-    mutating(async (req, reply, session) => {
+    ownerMutating(async (req, reply, session) => {
       const values = valuesFromBody(req.body, blankValues());
       const { errors, fields } = parseShowForm(req.body, values, null);
       if (errors.length) {
@@ -698,7 +725,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.get(
     '/shows/:slug/settings',
-    authed((req, reply, session) => {
+    ownerAuthed((req, reply, session) => {
       const show = showFor(req, session);
       if (!show) return notFound(reply);
       const flash = FLASH[(req.query as { flash?: string }).flash ?? ''];
@@ -708,7 +735,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.post(
     '/shows/:slug/settings',
-    mutating(async (req, reply, session) => {
+    ownerMutating(async (req, reply, session) => {
       const show = showFor(req, session);
       if (!show) return notFound(reply);
       const values = valuesFromBody(req.body, valuesFromShow(show));
@@ -742,7 +769,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.post(
     '/shows/:slug/cover/refresh',
-    mutating(async (req, reply, session) => {
+    ownerMutating(async (req, reply, session) => {
       const show = showFor(req, session);
       if (!show) return notFound(reply);
       const result = show.feed_url ? await refreshCover(ctx, show) : { ok: false as const, error: '' };
@@ -752,7 +779,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.post(
     '/shows/:slug/rotate-key',
-    mutating((req, reply, session) => {
+    ownerMutating((req, reply, session) => {
       const show = showFor(req, session);
       if (!show) return notFound(reply);
       repo.rotateSiteKey(show.id);

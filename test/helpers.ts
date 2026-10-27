@@ -63,7 +63,7 @@ export async function makeHarness(
     verifyTurnstile: verify ?? defaultVerify,
     logger: false,
   });
-  ctx.repo.upsertAdmin(ADMIN_EMAIL, await hash(ADMIN_PASSWORD));
+  ctx.repo.upsertOwner(ADMIN_EMAIL, await hash(ADMIN_PASSWORD));
   return {
     app,
     ctx,
@@ -149,12 +149,12 @@ export function csrfFromHtml(body: string): string {
   return m[1]!;
 }
 
-export async function login(h: Harness): Promise<{ cookie: string; csrf: string }> {
+export async function login(h: Harness, email = ADMIN_EMAIL, password = ADMIN_PASSWORD): Promise<{ cookie: string; csrf: string }> {
   const res = await h.app.inject({
     method: 'POST',
     url: '/login',
     headers: { 'content-type': 'application/x-www-form-urlencoded', origin: APP_URL },
-    payload: new URLSearchParams({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD }).toString(),
+    payload: new URLSearchParams({ email, password }).toString(),
   });
   if (res.statusCode !== 302) throw new Error(`login failed with ${res.statusCode}`);
   const cookie = cookieFrom(res);
