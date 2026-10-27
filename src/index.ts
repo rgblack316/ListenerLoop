@@ -1,7 +1,7 @@
 import './env.js';
 import { buildApp } from './app.js';
 import { ConfigError, loadConfig } from './config.js';
-import { purgeDeleted, recoverInterrupted } from './process.js';
+import { purgeDeleted, purgeExpired, recoverInterrupted } from './process.js';
 
 async function main(): Promise<void> {
   let config;
@@ -30,6 +30,9 @@ async function main(): Promise<void> {
   const purgeAndLog = (): void => {
     void purgeDeleted(ctx).then((n) => {
       if (n > 0) app.log.info({ purged: n }, 'removed deleted messages from storage');
+    });
+    void purgeExpired(ctx).then((n) => {
+      if (n > 0) app.log.info({ purged: n, retentionDays: ctx.config.retentionDays }, 'removed messages past the retention period');
     });
   };
   purgeAndLog();

@@ -206,3 +206,13 @@ export async function purgeDeleted(ctx: AppContext): Promise<number> {
   for (const m of ctx.repo.listDeleted()) if (await purgeMessage(ctx, m)) purged++;
   return purged;
 }
+
+/** Deletes messages older than RETENTION_DAYS (0 = keep forever). Starred messages are kept. */
+export async function purgeExpired(ctx: AppContext): Promise<number> {
+  const days = ctx.config.retentionDays;
+  if (days <= 0) return 0;
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  let purged = 0;
+  for (const m of ctx.repo.listExpired(cutoff)) if (await purgeMessage(ctx, m)) purged++;
+  return purged;
+}

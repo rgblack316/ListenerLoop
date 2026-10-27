@@ -252,6 +252,13 @@ export class Repo {
     return this.db.prepare('SELECT * FROM messages WHERE deleted_at IS NOT NULL').all() as Message[];
   }
 
+  /** Messages older than the cutoff that are due for automatic deletion. Starred messages are kept. */
+  listExpired(beforeIso: string): Message[] {
+    return this.db
+      .prepare("SELECT * FROM messages WHERE created_at < ? AND starred = 0 AND deleted_at IS NULL AND status != 'processing'")
+      .all(beforeIso) as Message[];
+  }
+
   purgeMessage(id: string): void {
     this.db.prepare('DELETE FROM messages WHERE id = ?').run(id);
   }

@@ -117,7 +117,7 @@ Five tables for v1, plus `schema_migrations`. IDs are ULIDs; timestamps are UTC.
 **Notes**
 
 - IP addresses are stored only as a salted hash, used for rate-limit review, never in plain text.
-- Deleting a message in the admin removes its MP3, any original and the database row (including the sender's name and email) straight away. If storage is unreachable, the message is hidden and an hourly sweep (also run at startup) retries until the files are gone. There is no undo. Automatic deletion by age (`RETENTION_DAYS`) is *(planned, Phase 2)*.
+- Deleting a message in the admin removes its MP3, any original and the database row (including the sender's name and email) straight away. If storage is unreachable, the message is hidden and an hourly sweep (also run at startup) retries until the files are gone. There is no undo. Automatic deletion by age (`RETENTION_DAYS`) uses the same removal and keeps starred messages.
 - Storage keys follow `shows/<show_id>/<yyyy>/<message_id>.mp3` (originals use `.orig`) so buckets stay browsable.
 
 ## Routes
@@ -214,7 +214,7 @@ Server-rendered pages, with htmx for small live updates such as starring or arch
 
 - A consent line is shown before recording, with configurable text per show.
 - The email field is shown by default but is always optional, with a note that it is only used to reply. The name field is always shown and required, so the podcaster knows who left a message before listening. Only the email field can be hidden per show.
-- Deleting is permanent, and retention will be configurable (for example, auto-delete after N days; *planned*), and listeners can be given a contact address to request removal.
+- Deleting is permanent, and retention is configurable (`RETENTION_DAYS`, starred messages are kept), and listeners can be given a contact address to request removal.
 - Uploaded filenames and client metadata are never trusted or stored as paths.
 
 ## Notifications
@@ -256,7 +256,7 @@ All settings come from environment variables (a `.env` file in Docker Compose).
 | `TRUST_PROXY` | Trust forwarded client IP headers; set `false` only if exposed directly | `true` |
 | `PORT`, `HOST`, `LOG_LEVEL` | Server listen settings and log level | `3000`, `0.0.0.0`, `info` |
 | `FFMPEG_PATH`, `FFPROBE_PATH` | Locations of the ffmpeg tools | `ffmpeg`, `ffprobe` |
-| `RETENTION_DAYS` | Auto-delete after N days. Read but not enforced yet (Phase 2) | `0` |
+| `RETENTION_DAYS` | Delete messages older than N days, checked hourly and at startup (0 = keep forever). Starred messages are kept | `0` |
 | `TRANSCRIBE_PROVIDER` | `none`, `whispercpp` or `api` (later phase, not read yet) | `none` |
 
 ## Deployment
@@ -302,7 +302,7 @@ Each phase is done only when its acceptance criteria pass.
 - [ ] Per-show widget settings with live preview in admin.
 - [x] File-upload fallback and hosted `/s/:slug` page.
 - [x] Retry for failed processing, with the failure reason shown in the inbox, and email-alert failures shown on the message with a resend button.
-- [ ] Automatic deletion by age (retention setting). Deleting a message already removes its files.
+- [x] Automatic deletion by age (`RETENTION_DAYS`). Starred messages are kept.
 - [ ] Backup and restore documentation, tested once end to end.
 - [ ] In-app browser testing (Facebook, Instagram, and similar). Regular browsers on several devices are already confirmed.
 

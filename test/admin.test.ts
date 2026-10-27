@@ -15,7 +15,7 @@ import {
   type Harness,
 } from './helpers.js';
 import type { Show } from '../src/db/repo.js';
-import { purgeDeleted } from '../src/process.js';
+import { purgeDeleted, purgeExpired } from '../src/process.js';
 
 const ffmpeg = hasFfmpeg();
 
@@ -490,6 +490,38 @@ describe.skipIf(!ffmpeg)('admin: inbox, playback and actions', () => {
     expect(h.sent.length).toBe(before + 1);
     expect(h.ctx.repo.getMessage(id)!.email_error).toBeNull();
     expect((await get(url)).body).not.toContain('could not be sent');
+  });
+
+  it('deletes messages past the retention period, but keeps starred and recent ones', async () => {
+    const r = await makeHarness({ RETENTION_DAYS: '30' });
+    try {
+      const s = r.ctx.repo.createShow({ name: 'Old Show' });
+      const audio = makeAudio('webm-stream', 1);
+      const make = async (name: string) => {
+        const body = multipart({ key: s.site_key, name, consent: 'true', 'cf-turnstile-response': 'ok' }, { data: audio });
+        const res = await r.app.inject({ method: 'POST', url: '/api/public/messages', payload: body.payload, headers: { ...body.headers, origin: APP_URL } });
+        await r.ctx.queue.idle();
+        return res.json().id as string;
+      };
+      const [oldId, oldStarred, recent] = [await make('Old'), await make('OldStar'), await make('Recent')];
+      const longAgo = new Date(Date.now() - 45 * 24 * 3600 * 1000).toISOString();
+      r.ctx.repo.db.prepare('UPDATE messages SET created_at = ? WHERE id IN (?, ?)').run(longAgo, oldId, oldStarred);
+      r.ctx.repo.updateMessage(oldStarred, { starred: 1 });
+      const oldKey = r.ctx.repo.getMessage(oldId)!.mp3_key!;
+      expect(await purgeExpired(r.ctx)).toBe(1);
+      expect(r.ctx.repo.getMessage(oldId)).toBeUndefined();
+      expect(await r.ctx.storage.exists(oldKey)).toBe(false);
+      expect(r.ctx.repo.getMessage(oldStarred)).toBeDefined();
+      expect(r.ctx.repo.getMessage(recent)).toBeDefined();
+    } finally {
+      await r.close();
+    }
+    const never = await makeHarness();
+    try {
+      expect(await purgeExpired(never.ctx)).toBe(0);
+    } finally {
+      await never.close();
+    }
   });
 
   it('shows a failed message with its reason', async () => {
