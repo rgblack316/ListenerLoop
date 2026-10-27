@@ -61,6 +61,8 @@ export interface Config {
   rnnoiseModel: string;
   /** Address replies to listeners are sent from. Defaults to the address in MAIL_FROM. */
   replyFromAddress: string;
+  /** Tests only: let the cover-art fetch reach local addresses. Never enable on a real server. */
+  feedAllowPrivate: boolean;
 }
 
 type Env = Record<string, string | undefined>;
@@ -196,6 +198,7 @@ export function loadConfig(env: Env = process.env): Config {
     whisperThreads: int('WHISPER_THREADS', 2, 1),
     whisperLanguage: str('WHISPER_LANGUAGE', whisperModel.endsWith('.en') ? 'en' : 'auto'),
     replyFromAddress: replyFromAddress,
+    feedAllowPrivate: bool('FEED_ALLOW_PRIVATE', false),
     rnnoiseModel: str('RNNOISE_MODEL', fileURLToPath(new URL('../models/rnnoise-bd.rnnn', import.meta.url))),
     transcribeTimeoutSec: int('TRANSCRIBE_TIMEOUT_SEC', 1800, 30),
   };

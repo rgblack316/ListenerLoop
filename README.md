@@ -70,6 +70,10 @@ Sign in at `https://YOUR-APP-DOMAIN/login`. Each show has its own inbox at `/sho
 - **Local development:** `npm install && npm run dev` (Node 22+, ffmpeg on the PATH). Use Cloudflare's dummy Turnstile keys from `.env.example`.
 - **Tests:** `npm test` (needs ffmpeg).
 
+## Cover art
+
+Each show can have its podcast RSS feed address in its settings (optional). ListenerLoop reads the feed once, downloads the cover image, shrinks it to a small square JPEG and keeps that copy in your storage, so the dashboard never loads images from anyone else's server. It appears next to the show name in the shows list, the inbox and the settings page; a letter tile is used until there is one. Press **Refresh cover art** after you change your artwork. Only public web addresses are fetched: private and internal network addresses are refused, redirects and sizes are limited, and the image is re-encoded, which also strips its metadata.
+
 ## Replying to listeners
 
 If a listener shared an email address, open their message and use **Reply**. The email is sent from `REPLY_FROM_ADDRESS` (set it in `.env`, for example `replies@listenerloop.app`; its domain must be verified with your mail provider, and it falls back to the address in `MAIL_FROM`) with your show's name as the sender, and **Reply-To** is set to the show's email address from its settings, so the listener's answer lands in your own mailbox. Every show must have an email address (alerts go there too). Replies are kept with the message as a thread, can be retried if sending fails, and are removed when the message is deleted. Limits: 10 replies per message and 30 per hour.
@@ -115,7 +119,7 @@ To restore on the same server, run `restore.sh` with the archive. It asks for co
 - One installation, many shows, each with its own site key, allowed sites, widget text and inbox.
 - Embed button, recorder modal (name required, email optional, consent notice), Turnstile, MP3 conversion, local or S3 storage.
 - Upload-a-file fallback when the microphone is blocked, and a hosted recorder page for each show at `/s/<slug>` for newsletters and social bios.
-- Admin: sign in, per-show and combined inboxes, playback with speed control and download, star, archive, delete, private notes, search (name, email, notes, transcripts), optional on-server transcription, a waveform you can click to seek, bulk download of selected messages as a zip (MP3s, transcripts and a CSV index), optional per-show noise reduction and volume levelling (-19 LUFS, the mono podcast standard), replies to listeners by email, and an email alert for each new message.
+- Admin: sign in, per-show and combined inboxes, playback with speed control and download, star, archive, delete, private notes, search (name, email, notes, transcripts), optional on-server transcription, a waveform you can click to seek, bulk download of selected messages as a zip (MP3s, transcripts and a CSV index), optional per-show noise reduction and volume levelling (-19 LUFS, the mono podcast standard), cover art from the show's RSS feed, replies to listeners by email, and an email alert for each new message.
 
 **Not built yet:** multiple users, webhooks. See the roadmap.
 

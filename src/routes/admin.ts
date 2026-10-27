@@ -22,6 +22,7 @@ import {
   replyBlocked,
   sendReply,
 } from '../reply.js';
+import { checkFeedUrl, clearCover, refreshCover } from '../cover.js';
 import { buildZip, MAX_ZIP_MESSAGES } from '../zip.js';
 import { queueTranscription, transcriptionAvailable } from '../transcribe.js';
 import { notifyNewMessage, purgeMessage, retryMessage } from '../process.js';
@@ -66,6 +67,8 @@ const FLASH: Record<string, string> = {
   nopicked: 'Tick the messages you want to download first.',
   replied: 'Reply sent.',
   replyfailed: 'The reply could not be sent. The reason is shown below, and you can try again.',
+  coverok: 'Cover art updated.',
+  coverfail: 'Saved, but the cover art could not be fetched. The reason is shown below.',
   notranscribe: 'Transcription is not switched on for this server.',
   alert: 'Alert email handled. If it failed again, the reason is shown below.',
 };
@@ -563,6 +566,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     transcribe: false,
     normalize_loudness: false,
     noise_reduction: 'off',
+    feed_url: '',
   });
 
   const valuesFromShow = (s: Show): ShowFormValues => ({
@@ -581,6 +585,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     transcribe: s.transcribe === 1,
     normalize_loudness: s.normalize_loudness === 1,
     noise_reduction: s.noise_reduction,
+    feed_url: s.feed_url ?? '',
   });
 
   const valuesFromBody = (body: unknown, prev: ShowFormValues): ShowFormValues => ({
@@ -598,6 +603,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     retain_original: field(body, 'retain_original') === '1',
     transcribe: field(body, 'transcribe') === '1',
     normalize_loudness: field(body, 'normalize_loudness') === '1',
+    feed_url: cleanText(field(body, 'feed_url'), 500),
     noise_reduction: NOISE_REDUCTION_LEVELS.includes(field(body, 'noise_reduction') as NoiseReduction) ? (field(body, 'noise_reduction') as NoiseReduction) : 'off',
   });
 
@@ -613,6 +619,8 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     if (invalid.length) errors.push(`These sites are not valid addresses: ${invalid.join(', ')}`);
     if (!v.notify_email) errors.push("The show's email address is required. Alerts go there, and listener replies use it as the Reply-To address.");
     else if (!isValidEmail(v.notify_email)) errors.push('The show email address does not look right.');
+    const feed = checkFeedUrl(v.feed_url);
+    if ('error' in feed) errors.push(feed.error);
     const maxSeconds = Number.parseInt(v.max_seconds, 10);
     if (!Number.isInteger(maxSeconds) || maxSeconds < 5 || maxSeconds > MAX_SECONDS_LIMIT) {
       errors.push(`Maximum length must be between 5 and ${MAX_SECONDS_LIMIT} seconds.`);
@@ -643,6 +651,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
         transcribe: v.transcribe ? 1 : 0,
         normalize_loudness: v.normalize_loudness ? 1 : 0,
         noise_reduction: v.noise_reduction,
+        feed_url: 'url' in feed && feed.url ? feed.url : null,
       },
     };
   };
@@ -664,13 +673,17 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.post(
     '/shows',
-    mutating((req, reply, session) => {
+    mutating(async (req, reply, session) => {
       const values = valuesFromBody(req.body, blankValues());
       const { errors, fields } = parseShowForm(req.body, values, null);
       if (errors.length) {
         return page(reply, showFormPage({ csrf: session.csrf, show: null, values, errors, maxSecondsLimit: MAX_SECONDS_LIMIT, transcriptionOn: transcriptionAvailable(ctx) }), 400);
       }
-      repo.createShow({ ...(fields as Omit<typeof fields, 'name'>), name: values.name });
+      const created = repo.createShow({ ...(fields as Omit<typeof fields, 'name'>), name: values.name });
+      if (created.feed_url) {
+        const cover = await refreshCover(ctx, created);
+        if (!cover.ok) return reply.redirect(`/shows/${created.slug}/settings?flash=coverfail`);
+      }
       return reply.redirect('/shows?flash=created');
     }),
   );
@@ -688,13 +701,14 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     authed((req, reply, session) => {
       const show = showFor(req, session);
       if (!show) return notFound(reply);
-      return page(reply, showFormPage({ csrf: session.csrf, show, values: valuesFromShow(show), errors: [], maxSecondsLimit: MAX_SECONDS_LIMIT, transcriptionOn: transcriptionAvailable(ctx) }));
+      const flash = FLASH[(req.query as { flash?: string }).flash ?? ''];
+      return page(reply, showFormPage({ csrf: session.csrf, show, values: valuesFromShow(show), errors: [], maxSecondsLimit: MAX_SECONDS_LIMIT, transcriptionOn: transcriptionAvailable(ctx), flash }));
     }),
   );
 
   app.post(
     '/shows/:slug/settings',
-    mutating((req, reply, session) => {
+    mutating(async (req, reply, session) => {
       const show = showFor(req, session);
       if (!show) return notFound(reply);
       const values = valuesFromBody(req.body, valuesFromShow(show));
@@ -703,7 +717,36 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
         return page(reply, showFormPage({ csrf: session.csrf, show, values, errors, maxSecondsLimit: MAX_SECONDS_LIMIT, transcriptionOn: transcriptionAvailable(ctx) }), 400);
       }
       repo.updateShow(show.id, fields);
+      if ((fields.feed_url ?? null) !== (show.feed_url ?? null)) {
+        const updated = repo.getShow(show.id)!;
+        if (!updated.feed_url) await clearCover(ctx, updated);
+        else if (!(await refreshCover(ctx, updated)).ok) return reply.redirect(`/shows/${updated.slug}/settings?flash=coverfail`);
+      }
       return reply.redirect('/shows?flash=saved');
+    }),
+  );
+
+  app.get(
+    '/shows/:slug/cover',
+    authed(async (req, reply, session) => {
+      const show = showFor(req, session);
+      if (!show || !show.cover_key) return notFound(reply);
+      if ((await ctx.storage.size(show.cover_key)) === null) return notFound(reply);
+      return reply
+        .header('content-type', 'image/jpeg')
+        .header('cache-control', 'private, max-age=86400')
+        .header('x-content-type-options', 'nosniff')
+        .send(await ctx.storage.getStream(show.cover_key));
+    }),
+  );
+
+  app.post(
+    '/shows/:slug/cover/refresh',
+    mutating(async (req, reply, session) => {
+      const show = showFor(req, session);
+      if (!show) return notFound(reply);
+      const result = show.feed_url ? await refreshCover(ctx, show) : { ok: false as const, error: '' };
+      return reply.redirect(`/shows/${show.slug}/settings?flash=${result.ok ? 'coverok' : 'coverfail'}`);
     }),
   );
 

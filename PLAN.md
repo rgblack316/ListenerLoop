@@ -322,6 +322,8 @@ Each phase is done only when its acceptance criteria pass.
 
 ### Phase 4: Later
 
+- [x] Show cover art from the podcast's RSS feed (optional feed address per show, migration 9): fetched with an SSRF-safe client (public addresses only, redirect, size and time limits), re-encoded to a 256 px JPEG with ffmpeg, stored in the storage driver at `covers/<show>.jpg`, served only to signed-in users, and shown beside the show name in the shows list, home list, inbox and settings. Refresh on save or on request.
+
 - [x] Reply to listeners who chose to share an email address, from the message page in admin. Sent through the configured mail provider from `REPLY_FROM_ADDRESS` (for example replies@listenerloop.app) with the show's name as the display name and the show's email address as Reply-To, so the listener's answer goes straight to the host. The show's email address is now required in show settings. Replies are stored with the message (migration 8), shown as a thread, retryable if sending fails, limited to 10 per message and 30 per hour, and deleted with the message.
 - Multi-user admin with roles and invitations, where a user can be limited to selected shows (`users` and `user_shows` tables; narrow `accessibleShows()` in `src/routes/admin.ts`, which every show, inbox, message and audio route already uses); optional TOTP.
 - Webhooks and an RSS or JSON export of messages.

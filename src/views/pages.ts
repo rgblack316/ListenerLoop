@@ -96,7 +96,7 @@ export function inboxPage(v: InboxView): string {
     nav: v.show ? 'shows' : 'inbox',
     body: html`${v.show ? html`<p><a href="/">&larr; All shows</a></p>` : ''}
     <div class="head-row">
-      <h1>${v.show ? v.show.name : 'All messages'}</h1>
+      <h1 class="with-cover">${v.show ? coverThumb(v.show, 'lg') : ''}<span>${v.show ? v.show.name : 'All messages'}</span></h1>
       ${v.show ? html`<a href="/shows/${v.show.slug}/settings">Settings and embed code</a>` : ''}
     </div>
     <div class="toolbar">
@@ -149,7 +149,7 @@ export function homePage(shows: ShowSummary[], unreadAll: number, csrf: string):
       ${shows.map(
         ({ show, unread, total }) => html`<li class="msg${unread ? ' unread' : ''}">
           <a class="msg-main" href="/shows/${show.slug}">
-            <span class="who">${show.name}${unread ? html` <span class="badge new">${unread} new</span>` : ''}</span>
+            <span class="who with-cover">${coverThumb(show)}<span>${show.name}</span>${unread ? html` <span class="badge new">${unread} new</span>` : ''}</span>
             <span class="meta">${total} ${total === 1 ? 'message' : 'messages'}</span>
           </a>
         </li>`,
@@ -290,6 +290,15 @@ export function embedSnippet(appUrl: string, siteKey: string): string {
   return `<script src="${appUrl}/embed.js" data-site-key="${siteKey}" async></script>`;
 }
 
+/** The show's cover art, or a letter tile until one is fetched. Always the same size, so lists line up. */
+export function coverThumb(show: Pick<Show, 'slug' | 'name' | 'cover_key' | 'cover_updated_at'>, size: 'sm' | 'lg' = 'sm'): Raw {
+  if (show.cover_key) {
+    const v = show.cover_updated_at ? Date.parse(show.cover_updated_at) || 0 : 0;
+    return html`<img class="cover cover-${size}" src="/shows/${show.slug}/cover?v=${v}" alt="" width="${size === 'lg' ? 64 : 40}" height="${size === 'lg' ? 64 : 40}">`;
+  }
+  return html`<span class="cover cover-${size} cover-letter" aria-hidden="true">${[...show.name.trim()][0]?.toUpperCase() ?? '?'}</span>`;
+}
+
 export function showsPage(shows: Show[], appUrl: string, csrf: string, flash?: string): string {
   return layout({
     title: 'Shows',
@@ -301,7 +310,7 @@ export function showsPage(shows: Show[], appUrl: string, csrf: string, flash?: s
     ${shows.map((s) => {
       const origins = showOrigins(s);
       return html`<section class="card">
-        <div class="head-row"><h2>${s.name}</h2><span><a href="/shows/${s.slug}">Inbox</a> · <a href="/shows/${s.slug}/settings">Settings</a></span></div>
+        <div class="head-row"><h2 class="with-cover">${coverThumb(s)}<span>${s.name}</span></h2><span><a href="/shows/${s.slug}">Inbox</a> · <a href="/shows/${s.slug}/settings">Settings</a></span></div>
         <p class="muted">Allowed sites: ${origins.length ? origins.join(', ') : 'none yet. The widget cannot be embedded until you add one.'}</p>
         <label class="stack">Embed code
           <textarea readonly rows="2" data-select-on-focus>${embedSnippet(appUrl, s.site_key)}</textarea>
@@ -333,6 +342,7 @@ export interface ShowFormValues {
   transcribe: boolean;
   normalize_loudness: boolean;
   noise_reduction: 'off' | 'light' | 'strong';
+  feed_url: string;
 }
 
 export function showFormPage(opts: {
@@ -343,6 +353,7 @@ export function showFormPage(opts: {
   maxSecondsLimit: number;
   /** Whether the server has transcription switched on (TRANSCRIPTION=whisper). */
   transcriptionOn: boolean;
+  flash?: string;
 }): string {
   const { values: v, show } = opts;
   return layout({
@@ -350,7 +361,14 @@ export function showFormPage(opts: {
     csrf: opts.csrf,
     nav: 'shows',
     body: html`<p><a href="/shows">&larr; Back to shows</a></p>
-    <h1>${show ? `Edit ${show.name}` : 'Add show'}</h1>
+    <h1 class="with-cover">${show ? coverThumb(show, 'lg') : ''}<span>${show ? `Edit ${show.name}` : 'Add show'}</span></h1>
+    ${opts.flash ? html`<p class="notice" role="status">${opts.flash}</p>` : ''}
+    ${show && show.feed_url
+      ? html`<div class="${show.cover_error ? 'alert' : 'notice'}">
+          ${show.cover_error ? html`<p>Cover art could not be fetched: ${show.cover_error}</p>` : html`<p>${show.cover_key ? 'Cover art is loaded from your RSS feed.' : 'Cover art has not been fetched yet.'}</p>`}
+          <form method="post" action="/shows/${show.slug}/cover/refresh">${csrfField(opts.csrf)}<button class="btn" type="submit">${show.cover_key ? 'Refresh cover art' : 'Fetch cover art'}</button></form>
+        </div>`
+      : ''}
     ${opts.errors.length ? html`<div class="alert" role="alert"><ul>${opts.errors.map((e) => html`<li>${e}</li>`)}</ul></div>` : ''}
     <div class="show-layout">
     <form method="post" action="${show ? `/shows/${show.slug}/settings` : '/shows'}" class="card stack" data-preview>
@@ -364,6 +382,10 @@ export function showFormPage(opts: {
       <label>Show email address
         <input type="email" name="notify_email" value="${v.notify_email}" required maxlength="254" placeholder="you@yourshow.com">
         <small>New-message alerts go here. When you reply to a listener, this becomes the Reply-To address, so their answer comes back to you.</small>
+      </label>
+      <label>Podcast RSS feed address (optional)
+        <input type="url" name="feed_url" value="${v.feed_url}" maxlength="500" placeholder="https://example.com/feed.xml">
+        <small>Used only to fetch your cover art for this dashboard. It is saved as a small copy, not linked from your feed.</small>
       </label>
       <label>Maximum message length (seconds)<input type="number" name="max_seconds" value="${v.max_seconds}" min="5" max="${opts.maxSecondsLimit}" required></label>
       <label>Button label<input name="button_label" value="${v.button_label}" maxlength="60"></label>

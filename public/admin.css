@@ -126,3 +126,11 @@ mark { background: #fde68a; color: inherit; padding: 0 1px; border-radius: 2px; 
 .reply { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
 .reply.failed { border-color: #b42318; }
 .reply p { margin: 0 0 6px; }
+
+.with-cover { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.with-cover > span:not(.cover) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cover { flex: none; border-radius: 8px; object-fit: cover; background: #dbe3ea; }
+.cover-sm { width: 40px; height: 40px; }
+.cover-lg { width: 64px; height: 64px; border-radius: 10px; }
+.cover-letter { display: inline-flex; align-items: center; justify-content: center; background: #21649E; color: #fff; font-weight: 700; font-size: 1.1rem; }
+.cover-lg.cover-letter { font-size: 1.6rem; }

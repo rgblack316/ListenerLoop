@@ -25,6 +25,12 @@ export interface Show {
   normalize_loudness: number;
   /** Noise reduction applied when converting: off, light (filters) or strong (neural network). */
   noise_reduction: NoiseReduction;
+  /** The podcast's RSS feed, used only to fetch cover art for the dashboard. */
+  feed_url: string | null;
+  /** Storage key of the 256 px cover image, once fetched. */
+  cover_key: string | null;
+  cover_updated_at: string | null;
+  cover_error: string | null;
   created_at: string;
 }
 
@@ -175,14 +181,18 @@ export class Repo {
       transcribe: input.transcribe ?? 0,
       normalize_loudness: input.normalize_loudness ?? 0,
       noise_reduction: input.noise_reduction ?? 'off',
+      feed_url: input.feed_url ?? null,
+      cover_key: null,
+      cover_updated_at: null,
+      cover_error: null,
       created_at: nowIso(),
     };
     this.db
       .prepare(
         `INSERT INTO shows (id, name, slug, site_key, allowed_origins, notify_email, max_seconds, ask_email, consent_text,
-          button_label, accent_color, prompt_text, thanks_text, retain_original, transcribe, normalize_loudness, noise_reduction, created_at)
+          button_label, accent_color, prompt_text, thanks_text, retain_original, transcribe, normalize_loudness, noise_reduction, feed_url, created_at)
          VALUES (@id, @name, @slug, @site_key, @allowed_origins, @notify_email, @max_seconds, @ask_email, @consent_text,
-          @button_label, @accent_color, @prompt_text, @thanks_text, @retain_original, @transcribe, @normalize_loudness, @noise_reduction, @created_at)`,
+          @button_label, @accent_color, @prompt_text, @thanks_text, @retain_original, @transcribe, @normalize_loudness, @noise_reduction, @feed_url, @created_at)`,
       )
       .run(show);
     return show;

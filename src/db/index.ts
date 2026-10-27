@@ -165,6 +165,16 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX idx_replies_created ON replies(created_at);
     `,
   },
+  {
+    id: 9,
+    name: 'show cover art',
+    sql: `
+      ALTER TABLE shows ADD COLUMN feed_url TEXT;
+      ALTER TABLE shows ADD COLUMN cover_key TEXT;
+      ALTER TABLE shows ADD COLUMN cover_updated_at TEXT;
+      ALTER TABLE shows ADD COLUMN cover_error TEXT;
+    `,
+  },
 ];
 
 export function migrate(db: DB): void {
