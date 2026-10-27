@@ -6,7 +6,7 @@
 
 *Turn listener feedback into conversation.*
 
-Last updated: 2026-10-26. Tick the checkboxes below as work lands. **Status:** Phase 1 is built, installed on an Ubuntu server behind a Cloudflare Tunnel, and tested by several people across browsers and devices. Items marked *(planned)* below are not built yet.
+Last updated: 2026-10-27. Tick the checkboxes below as work lands. **Status:** Phase 1 is built, installed on an Ubuntu server behind a Cloudflare Tunnel, and tested by several people across browsers and devices. Items marked *(planned)* below are not built yet.
 
 ## Overview and goals
 
@@ -278,7 +278,7 @@ All settings come from environment variables (a `.env` file in Docker Compose).
 **Backups**
 
 - SQLite: nightly consistent copy via `scripts/backup.sh` (cron), shipped off-box by the operator.
-- Audio: with the `s3` driver, rely on bucket versioning or replication; with `local`, include `/data/audio` in the backup.
+- Audio: with the `s3` driver, sync the bucket to a second bucket or provider (R2 has no versioning; S3 and B2 do); with `local`, include `/data/audio` in the backup.
 - Restore is `scripts/restore.sh` (see the README).
 
 ## Phased milestones

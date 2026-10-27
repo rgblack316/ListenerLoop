@@ -77,7 +77,7 @@ sudo ./scripts/backup.sh /var/backups/listenerloop    # default folder: ./backup
 sudo ./scripts/restore.sh /var/backups/listenerloop/listenerloop-YYYYMMDD-HHMMSS.tar.gz
 ```
 
-A backup is one `.tar.gz` holding a consistent database copy, the local audio files and your `.env` (it contains secrets, so it is created readable by root only). It is safe to run while the app is running, and the newest 14 are kept (`KEEP=30` to change). With `STORAGE_DRIVER=s3` the audio is not included: turn on versioning or replication on the bucket.
+A backup is one `.tar.gz` holding a consistent database copy, the local audio files and your `.env` (it contains secrets, so it is created readable by root only). It is safe to run while the app is running, and the newest 14 are kept (`KEEP=30` to change). With `STORAGE_DRIVER=s3` the audio is not included: copy the bucket to a second bucket or provider on a schedule (for example `rclone sync`). Cloudflare R2 has no object versioning.
 
 Run it nightly with cron (`sudo crontab -e`):
 
