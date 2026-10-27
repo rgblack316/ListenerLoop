@@ -1,6 +1,6 @@
 import { esc, html, raw, type Raw } from '../lib/html.js';
 
-export type NavKey = 'home' | 'inbox' | 'shows';
+export type NavKey = 'home' | 'inbox' | 'shows' | 'settings';
 
 export interface LayoutOptions {
   title: string;
@@ -17,6 +17,7 @@ export function layout(opts: LayoutOptions): string {
         <a class="brand" href="/"><img src="/static/brand/ListenerLoop-original-gradient.svg" alt="" width="28" height="28"> ListenerLoop</a>
         <a href="/inbox" ${opts.nav === 'inbox' ? raw('aria-current="page"') : ''}>Inbox</a>
         <a href="/shows" ${opts.nav === 'shows' ? raw('aria-current="page"') : ''}>Shows</a>
+        <a href="/settings" ${opts.nav === 'settings' ? raw('aria-current="page"') : ''}>Settings</a>
         <form method="post" action="/logout" class="inline">
           <input type="hidden" name="_csrf" value="${opts.csrf}">
           <button type="submit" class="link">Sign out</button>

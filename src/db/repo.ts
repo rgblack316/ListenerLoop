@@ -296,6 +296,11 @@ export class Repo {
     this.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash);
   }
 
+  /** Signs out every session except the one given (used after a password change). */
+  deleteOtherSessions(keepTokenHash: string): void {
+    this.db.prepare('DELETE FROM sessions WHERE token_hash != ?').run(keepTokenHash);
+  }
+
   deleteExpiredSessions(): void {
     this.db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(nowIso());
   }

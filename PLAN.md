@@ -152,7 +152,8 @@ The admin is server-rendered, so there is no JSON admin API. Pages and form post
 | `GET /shows/:slug/messages/:id/audio` | Local driver: streamed with HTTP Range. S3 driver: redirect to a signed URL that expires in 5 minutes. Add `?download=1` to download. |
 | `POST /shows/:slug/messages/:id/retry` | Re-run a failed message from its saved original (after fixing the cause, such as raising the show's length limit). |
 | `POST /shows/:slug/messages/:id/resend-alert` | Send the email alert again after a failure. |
-| `GET/POST /settings` | Email provider test, retention, change password *(planned)*. |
+| `GET /settings` | Settings page: email test, storage check, change password, read-only configuration. |
+| `POST /settings/test-email`, `/settings/test-storage`, `/settings/password` | Send a test email to the admin; write, read and delete a test file in storage; change the admin password (signs out other sessions, throttled). |
 
 A message opened under another show's URL returns 404. Public routes send CORS headers only for the show's allowed origins.
 
@@ -188,13 +189,13 @@ Server-rendered pages, with htmx for small live updates such as starring or arch
 - **Inbox:** one inbox per show and a combined view; filter by new, starred, archived, failed; newest first; unread indicator; the sender's name appears on every row so you know who left a message before you play it.
 - **Message view:** audio player with speed control, sender details, duration, date, private notes, star, archive, delete, download MP3.
 - **Shows:** create and edit shows, copy the embed snippet, rotate the site key, edit allowed origins and widget text and color, optional per-show Turnstile key.
+- **Settings:** a test-email button, a storage check (write, read, delete a test file), change password, and a read-only view of the configuration. Configuration itself stays in `.env`.
 - **Admin account:** created from the command line (`create-admin`); there is no setup screen.
 
 **Planned**
 
 - Search, and bulk actions (zip download, archive, delete).
 - Live widget preview when editing a show.
-- Settings page: email test-send, retention period, storage status, change password.
 - Reply to listeners, then multiple users with access to selected shows only (see Phase 4).
 
 ## Security and abuse protection

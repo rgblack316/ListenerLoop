@@ -279,3 +279,87 @@ export function showFormPage(opts: {
     </form>`,
   });
 }
+
+// ---------------------------------------------------------------- settings
+export interface SettingsView {
+  csrf: string;
+  adminEmail: string;
+  appUrl: string;
+  version: string;
+  mail: { provider: string; configured: boolean; from: string };
+  storage: { driver: string; location: string };
+  turnstile: { siteKey: string; custom: number };
+  limits: { rateLimitPerHour: number; rateLimitPerShowHour: number; dailyCapPerShow: number; maxUploadMb: number; maxSecondsDefault: number; retentionDays: number; keepOriginals: boolean; mp3BitrateKbps: number };
+  /** Outcome of the button that was just pressed. */
+  result?: { section: 'email' | 'storage' | 'password'; ok: boolean; message: string; steps?: string[] };
+}
+
+export function settingsPage(v: SettingsView): string {
+  const outcome = (section: 'email' | 'storage' | 'password'): Raw => {
+    const r = v.result;
+    if (!r || r.section !== section) return raw('');
+    return html`<div class="${r.ok ? 'notice' : 'alert'}" role="${r.ok ? 'status' : 'alert'}"><p>${r.message}</p>${r.steps ? html`<ul>${r.steps.map((s) => html`<li>${s}</li>`)}</ul>` : ''}</div>`;
+  };
+  const yes = (b: boolean): string => (b ? 'Yes' : 'No');
+  return layout({
+    title: 'Settings',
+    csrf: v.csrf,
+    nav: 'settings',
+    body: html`<h1>Settings</h1>
+
+    <section class="card">
+      <h2>Email alerts</h2>
+      ${outcome('email')}
+      <dl class="details">
+        <dt>Provider</dt><dd>${v.mail.provider}${v.mail.configured ? '' : html` <span class="muted">(not configured: alerts are off)</span>`}</dd>
+        <dt>Sent from</dt><dd>${v.mail.from || html`<span class="muted">Not set</span>`}</dd>
+        <dt>Admin email</dt><dd>${v.adminEmail}</dd>
+      </dl>
+      <form method="post" action="/settings/test-email">${csrfField(v.csrf)}
+        <button class="btn" type="submit" ${v.mail.configured ? '' : raw('disabled')}>Send a test email to ${v.adminEmail}</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Storage</h2>
+      ${outcome('storage')}
+      <dl class="details">
+        <dt>Driver</dt><dd>${v.storage.driver}</dd>
+        <dt>Location</dt><dd>${v.storage.location}</dd>
+      </dl>
+      <form method="post" action="/settings/test-storage">${csrfField(v.csrf)}
+        <button class="btn" type="submit">Test storage</button>
+      </form>
+      <p class="muted">Writes, reads and deletes a tiny test file to confirm the credentials and permissions work.</p>
+    </section>
+
+    <section class="card">
+      <h2>Change password</h2>
+      ${outcome('password')}
+      <form method="post" action="/settings/password" class="stack">${csrfField(v.csrf)}
+        <label>Current password<input type="password" name="current" autocomplete="current-password" required></label>
+        <label>New password (at least 12 characters)<input type="password" name="next" autocomplete="new-password" minlength="12" required></label>
+        <label>Repeat the new password<input type="password" name="confirm" autocomplete="new-password" minlength="12" required></label>
+        <button class="btn" type="submit">Change password</button>
+        <small>Other signed-in sessions are signed out.</small>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Configuration</h2>
+      <p class="muted">These come from the server's <code>.env</code> file. After editing it, run <code>sudo ./scripts/update.sh --restart</code>.</p>
+      <dl class="details">
+        <dt>App address</dt><dd>${v.appUrl}</dd>
+        <dt>Version</dt><dd>${v.version}</dd>
+        <dt>Turnstile site key</dt><dd>${v.turnstile.siteKey}${v.turnstile.custom ? html` <span class="muted">(${v.turnstile.custom} ${v.turnstile.custom === 1 ? 'show uses its' : 'shows use their'} own key)</span>` : ''}</dd>
+        <dt>Per-IP limit</dt><dd>${v.limits.rateLimitPerHour} per hour</dd>
+        <dt>Per-show limit</dt><dd>${v.limits.rateLimitPerShowHour} per hour, ${v.limits.dailyCapPerShow} per day</dd>
+        <dt>Largest upload</dt><dd>${v.limits.maxUploadMb} MB</dd>
+        <dt>Default message length</dt><dd>${durationText(v.limits.maxSecondsDefault)}</dd>
+        <dt>MP3 quality</dt><dd>${v.limits.mp3BitrateKbps} kbps mono</dd>
+        <dt>Keep originals</dt><dd>${yes(v.limits.keepOriginals)}</dd>
+        <dt>Auto-delete after</dt><dd>${v.limits.retentionDays > 0 ? `${v.limits.retentionDays} days (starred messages are kept)` : 'Never'}</dd>
+      </dl>
+    </section>`,
+  });
+}

@@ -533,3 +533,75 @@ describe.skipIf(!ffmpeg)('admin: inbox, playback and actions', () => {
     expect((await get(`/shows/${short.slug}/messages/${id}/audio`)).statusCode).toBe(404);
   });
 });
+
+describe('admin: settings page', () => {
+  let h: Harness;
+  let session: { cookie: string; csrf: string };
+  beforeAll(async () => {
+    h = await makeHarness();
+    session = await login(h);
+  });
+  afterAll(async () => {
+    await h.close();
+  });
+  const get = (url: string) => h.app.inject({ method: 'GET', url, headers: { cookie: session.cookie } });
+
+  it('shows the configuration without revealing any secret', async () => {
+    const res = await get('/settings');
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('Settings');
+    expect(res.body).toContain('Per-IP limit');
+    expect(res.body).toContain(h.config.turnstile.siteKey);
+    for (const secret of [h.config.turnstile.secretKey, h.config.sessionSecret]) expect(res.body).not.toContain(secret);
+    expect((await h.app.inject({ method: 'GET', url: '/settings' })).statusCode).toBe(302);
+  });
+
+  it('sends a test email to the admin, and reports a failure with its reason', async () => {
+    const ok = await formPost(h, '/settings/test-email', session, {});
+    expect(ok.statusCode).toBe(200);
+    expect(ok.body).toContain('Test email sent');
+    expect(h.sent.at(-1)!.to).toBe(ADMIN_EMAIL);
+    h.mail.fail = true;
+    const bad = await formPost(h, '/settings/test-email', session, {});
+    h.mail.fail = false;
+    expect(bad.body).toContain('could not be sent');
+    expect(bad.body).toContain('domain not verified');
+    expect((await h.app.inject({ method: 'POST', url: '/settings/test-email', headers: { cookie: session.cookie, origin: APP_URL } })).statusCode).toBe(403);
+  });
+
+  it('checks that storage can write, read and delete', async () => {
+    const ok = await formPost(h, '/settings/test-storage', session, {});
+    expect(ok.body).toContain('Storage works');
+    expect(ok.body).toContain('Deleted it');
+    expect(fs.existsSync(path.join(h.config.localStoragePath, 'healthcheck')) ? fs.readdirSync(path.join(h.config.localStoragePath, 'healthcheck')) : []).toEqual([]);
+    const real = h.ctx.storage.put.bind(h.ctx.storage);
+    h.ctx.storage.put = async () => { throw new Error('AccessDenied'); };
+    const bad = await formPost(h, '/settings/test-storage', session, {});
+    h.ctx.storage.put = real;
+    expect(bad.body).toContain('Storage check failed');
+    expect(bad.body).toContain('AccessDenied');
+  });
+
+  it('changes the password, signs out other sessions and rejects bad attempts', async () => {
+    const other = await login(h);
+    const wrong = await formPost(h, '/settings/password', session, { current: 'not the password', next: 'a brand new password', confirm: 'a brand new password' });
+    expect(wrong.statusCode).toBe(401);
+    const short = await formPost(h, '/settings/password', session, { current: ADMIN_PASSWORD, next: 'short', confirm: 'short' });
+    expect(short.statusCode).toBe(400);
+    const mismatch = await formPost(h, '/settings/password', session, { current: ADMIN_PASSWORD, next: 'a brand new password', confirm: 'a different one!!' });
+    expect(mismatch.body).toContain('did not match');
+    const same = await formPost(h, '/settings/password', session, { current: ADMIN_PASSWORD, next: ADMIN_PASSWORD, confirm: ADMIN_PASSWORD });
+    expect(same.body).toContain('different');
+
+    const ok = await formPost(h, '/settings/password', session, { current: ADMIN_PASSWORD, next: 'a brand new password', confirm: 'a brand new password' });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.body).toContain('Password changed');
+    expect((await get('/inbox')).statusCode).toBe(200);
+    expect((await h.app.inject({ method: 'GET', url: '/inbox', headers: { cookie: other.cookie } })).statusCode).toBe(302);
+
+    const oldLogin = await formPost(h, '/login', { cookie: '' }, { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+    expect(oldLogin.statusCode).toBe(401);
+    const newLogin = await formPost(h, '/login', { cookie: '' }, { email: ADMIN_EMAIL, password: 'a brand new password' });
+    expect(newLogin.statusCode).toBe(302);
+  });
+});

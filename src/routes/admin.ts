@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { hash, verify } from '@node-rs/argon2';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
@@ -19,10 +22,18 @@ import {
   type InboxFilter,
   type Show,
 } from '../db/repo.js';
-import { cleanText, encryptSecret, isValidEmail, parseRange, randomToken, safeFilePart, slugify } from '../lib/util.js';
-import { homePage, inboxPage, loginPage, messagePage, messageRow, showFormPage, showsPage, type ShowFormValues } from '../views/pages.js';
+import { cleanText, encryptSecret, isValidEmail, parseRange, randomToken, safeFilePart, slugify, ulid } from '../lib/util.js';
+import { homePage, inboxPage, loginPage, messagePage, messageRow, settingsPage, showFormPage, showsPage, type SettingsView, type ShowFormValues } from '../views/pages.js';
 
 const PAGE_SIZE = 25;
+const appVersion = (): string => {
+  try {
+    const file = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../package.json');
+    return (JSON.parse(fs.readFileSync(file, 'utf8')) as { version?: string }).version ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+};
 const MAX_SECONDS_LIMIT = 600;
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 type Body = Record<string, unknown>;
@@ -301,6 +312,108 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
       }
       void reply.header('Content-Length', size);
       return reply.send(await storage.getStream(m.mp3_key));
+    }),
+  );
+
+  // ---------------------------------------------------------------- settings
+  const pwThrottle = new LoginThrottle();
+
+  const settingsView = (session: AdminSession, result?: SettingsView['result']): SettingsView => ({
+    csrf: session.csrf,
+    adminEmail: repo.getAdmin()?.email ?? '',
+    appUrl: config.appUrl,
+    version: appVersion(),
+    mail: { provider: config.mail.provider, configured: !!ctx.mailer, from: config.mail.from },
+    storage: {
+      driver: config.storageDriver,
+      location: config.storageDriver === 's3' ? `${config.s3.endpoint || 'AWS S3'} / ${config.s3.bucket}` : config.localStoragePath,
+    },
+    turnstile: { siteKey: config.turnstile.siteKey, custom: repo.listShows().filter((s) => s.turnstile_site_key).length },
+    limits: {
+      rateLimitPerHour: config.rateLimitPerHour,
+      rateLimitPerShowHour: config.rateLimitPerShowHour,
+      dailyCapPerShow: config.dailyCapPerShow,
+      maxUploadMb: config.maxUploadMb,
+      maxSecondsDefault: config.maxSecondsDefault,
+      retentionDays: config.retentionDays,
+      keepOriginals: config.keepOriginals,
+      mp3BitrateKbps: config.mp3BitrateKbps,
+    },
+    result,
+  });
+
+  app.get('/settings', authed((_req, reply, session) => page(reply, settingsPage(settingsView(session)))));
+
+  app.post(
+    '/settings/test-email',
+    mutating(async (_req, reply, session) => {
+      const to = repo.getAdmin()?.email;
+      if (!ctx.mailer || !to) return page(reply, settingsPage(settingsView(session, { section: 'email', ok: false, message: 'Email is not configured. Set MAIL_PROVIDER and its settings in .env.' })));
+      try {
+        await ctx.mailer.send({ to, subject: 'ListenerLoop test email', text: `This is a test from ${config.appUrl}.\n\nIf you can read this, email alerts will reach you.` });
+        return page(reply, settingsPage(settingsView(session, { section: 'email', ok: true, message: `Test email sent to ${to}. Check your inbox (and spam folder).` })));
+      } catch (err) {
+        ctx.log.error({ err }, 'test email failed');
+        const reason = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').slice(0, 300);
+        return page(reply, settingsPage(settingsView(session, { section: 'email', ok: false, message: `The test email could not be sent: ${reason}` })));
+      }
+    }),
+  );
+
+  app.post(
+    '/settings/test-storage',
+    mutating(async (_req, reply, session) => {
+      const key = `healthcheck/${ulid()}.txt`;
+      const body = Buffer.from('ListenerLoop storage check');
+      const steps: string[] = [];
+      try {
+        await storage.put(key, body, 'text/plain');
+        steps.push('Wrote a test file');
+        const size = await storage.size(key);
+        if (size !== body.length) throw new Error('The test file was not the size that was written');
+        const chunks: Buffer[] = [];
+        for await (const c of await storage.getStream(key)) chunks.push(c as Buffer);
+        if (Buffer.concat(chunks).toString() !== body.toString()) throw new Error('The test file read back differently');
+        steps.push('Read it back');
+        await storage.delete(key);
+        if (await storage.exists(key)) throw new Error('The test file was not deleted');
+        steps.push('Deleted it');
+        return page(reply, settingsPage(settingsView(session, { section: 'storage', ok: true, message: 'Storage works.', steps })));
+      } catch (err) {
+        ctx.log.error({ err }, 'storage check failed');
+        await storage.delete(key).catch(() => undefined);
+        const reason = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').slice(0, 300);
+        return page(reply, settingsPage(settingsView(session, { section: 'storage', ok: false, message: `Storage check failed: ${reason}`, steps })));
+      }
+    }),
+  );
+
+  app.post(
+    '/settings/password',
+    mutating(async (req, reply, session) => {
+      const fail = (message: string, status = 400) => page(reply, settingsPage(settingsView(session, { section: 'password', ok: false, message })), status);
+      if (pwThrottle.blocked(req.ip)) return fail('Too many attempts. Please wait a few minutes and try again.', 429);
+      const admin = repo.getAdmin();
+      const current = field(req.body, 'current');
+      const next = field(req.body, 'next');
+      const confirm = field(req.body, 'confirm');
+      let ok = false;
+      try {
+        ok = !!admin && (await verify(admin.password_hash, current));
+      } catch {
+        ok = false;
+      }
+      if (!ok || !admin) {
+        pwThrottle.fail(req.ip);
+        return fail('The current password is not right.', 401);
+      }
+      pwThrottle.clear(req.ip);
+      if (next.length < 12) return fail('Use a new password of at least 12 characters.');
+      if (next !== confirm) return fail('The new passwords did not match.');
+      if (next === current) return fail('Choose a password that is different from the current one.');
+      repo.upsertAdmin(admin.email, await hash(next));
+      repo.deleteOtherSessions(session.tokenHash);
+      return page(reply, settingsPage(settingsView(session, { section: 'password', ok: true, message: 'Password changed. Other sessions were signed out.' })));
     }),
   );
 
