@@ -1,4 +1,5 @@
 import { deliverDue } from './webhook.js';
+import { scheduledBackupDue, startBackup } from './backup.js';
 import './env.js';
 import { buildApp } from './app.js';
 import { ConfigError, loadConfig } from './config.js';
@@ -50,6 +51,13 @@ async function main(): Promise<void> {
   }, 60 * 60 * 1000);
   sweep.unref();
   // Retry webhook deliveries that failed earlier, and pick up any left over from a restart.
+  // Scheduled backups: checked every minute, started when a scheduled time has passed.
+  const interrupted = ctx.repo.failInterruptedBackups();
+  if (interrupted > 0) app.log.warn({ interrupted }, 'marked unfinished backups as failed');
+  const backups = setInterval(() => {
+    if (scheduledBackupDue(ctx.repo)) startBackup(ctx, 'scheduled', null);
+  }, 60_000);
+  backups.unref();
   const hooks = setInterval(() => void deliverDue(ctx), 30_000);
   hooks.unref();
   void deliverDue(ctx);
@@ -61,6 +69,7 @@ async function main(): Promise<void> {
     app.log.info({ signal }, 'shutting down');
     clearInterval(sweep);
     clearInterval(hooks);
+    clearInterval(backups);
     await app.close();
     // Let an in-flight conversion finish, but do not hang forever.
     await Promise.race([Promise.all([ctx.queue.idle(), ctx.transcribeQueue.idle()]), new Promise((r) => setTimeout(r, 30_000))]);

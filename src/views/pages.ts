@@ -1,6 +1,8 @@
 import { html, raw, type Raw } from '../lib/html.js';
 import { INBOX_FILTERS, showOrigins, type InboxFilter, type MessageWithShow, type Reply, type Show } from '../db/repo.js';
 import type { Role } from '../db/repo.js';
+import type { Backup } from '../db/repo.js';
+import type { BackupSettings } from '../backup.js';
 import { csrfField, durationText, layout, timeTag } from './layout.js';
 
 const FILTER_LABELS: Record<InboxFilter, string> = {
@@ -451,12 +453,13 @@ export interface SettingsView {
   storage: { driver: string; location: string };
   turnstile: { siteKey: string };
   limits: { rateLimitPerHour: number; rateLimitPerShowHour: number; dailyCapPerShow: number; maxUploadMb: number; maxSecondsDefault: number; retentionDays: number; keepOriginals: boolean; mp3BitrateKbps: number };
+  backups: { settings: BackupSettings; list: Backup[]; next: string | null; storage: 'local' | 's3'; running: boolean; dir: string };
   /** Outcome of the button that was just pressed. */
-  result?: { section: 'email' | 'storage'; ok: boolean; message: string; steps?: string[] };
+  result?: { section: 'email' | 'storage' | 'backups'; ok: boolean; message: string; steps?: string[] };
 }
 
 export function settingsPage(v: SettingsView): string {
-  const outcome = (section: 'email' | 'storage'): Raw => {
+  const outcome = (section: 'email' | 'storage' | 'backups'): Raw => {
     const r = v.result;
     if (!r || r.section !== section) return raw('');
     return html`<div class="${r.ok ? 'notice' : 'alert'}" role="${r.ok ? 'status' : 'alert'}"><p>${r.message}</p>${r.steps ? html`<ul>${r.steps.map((s) => html`<li>${s}</li>`)}</ul>` : ''}</div>`;
@@ -493,6 +496,51 @@ export function settingsPage(v: SettingsView): string {
         <button class="btn" type="submit">Test storage</button>
       </form>
       <p class="muted">Writes, reads and deletes a tiny test file to confirm the credentials and permissions work.</p>
+    </section>
+
+    <section class="card" id="backups">
+      <h2>Backups</h2>
+      ${outcome('backups')}
+      <p class="muted">A backup is one file holding a safe copy of the database (messages, shows, users, replies, transcripts and settings)${v.backups.storage === 'local' ? ' and the audio files' : '. Your audio lives in S3 or R2 and is not included, so protect that bucket separately'}. It does not include the <code>.env</code> file. Backups are kept on this server in <code>${v.backups.dir}</code>.</p>
+      <form method="post" action="/settings/backups/run" class="inline">${csrfField(v.csrf)}
+        <button class="btn primary" type="submit" ${v.backups.running ? raw('disabled') : ''}>${v.backups.running ? 'A backup is running…' : 'Back up now'}</button>
+      </form>
+      <h3>Schedule</h3>
+      <form method="post" action="/settings/backups" class="stack">${csrfField(v.csrf)}
+        <label>Automatic backups
+          <select name="schedule">
+            <option value="off" ${v.backups.settings.schedule === 'off' ? raw('selected') : ''}>Off</option>
+            <option value="daily" ${v.backups.settings.schedule === 'daily' ? raw('selected') : ''}>Every day</option>
+            <option value="weekly" ${v.backups.settings.schedule === 'weekly' ? raw('selected') : ''}>Every week</option>
+          </select>
+        </label>
+        <label>On
+          <select name="weekday">${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((d, i) => html`<option value="${i}" ${v.backups.settings.weekday === i ? raw('selected') : ''}>${d}</option>`)}</select>
+          <small>Used for weekly backups.</small>
+        </label>
+        <label>At (UTC hour)
+          <select name="hour">${Array.from({ length: 24 }, (_, h) => html`<option value="${h}" ${v.backups.settings.hour === h ? raw('selected') : ''}>${String(h).padStart(2, '0')}:00 UTC</option>`)}</select>
+          <small>Pick a quiet time. ${v.backups.next ? html`Next backup: ${timeTag(v.backups.next)}.` : ''}</small>
+        </label>
+        <label>Keep the newest <input type="number" name="keep" value="${v.backups.settings.keep}" min="1" max="100" required> backups</label>
+        ${v.backups.storage === 'local'
+          ? html`<label class="check"><input type="checkbox" name="include_audio" value="1" ${v.backups.settings.includeAudio ? raw('checked') : ''}> Include the audio files</label>`
+          : html`<label class="check"><input type="checkbox" name="copy_to_storage" value="1" ${v.backups.settings.copyToStorage ? raw('checked') : ''}> Also copy each backup into your storage bucket (under <code>backups/</code>), so a copy lives off this server</label>`}
+        <button class="btn" type="submit">Save schedule</button>
+      </form>
+      <h3>Saved backups</h3>
+      ${v.backups.list.length
+        ? html`<ul class="msgs">${v.backups.list.map(
+            (b) => html`<li class="msg"><span class="msg-main"><span class="who">${timeTag(b.created_at)} <span class="badge">${b.kind}</span>
+                ${b.status === 'running' ? html`<span class="badge">running</span>` : b.status === 'failed' ? html`<span class="badge bad">failed</span>` : ''}</span>
+                <span class="meta">${b.status === 'ok' ? html`${(b.size_bytes ?? 0) < 1048576 ? `${Math.max(1, Math.round((b.size_bytes ?? 0) / 1024))} KB` : `${((b.size_bytes ?? 0) / 1048576).toFixed(1)} MB`}${b.includes_audio ? ' · with audio' : ' · database only'}${b.storage_key ? ' · copied to storage' : ''}` : ''}${b.error ? html`${b.error}` : ''}${b.started_by ? html` · by ${b.started_by}` : ''}</span></span>
+              <span class="row-actions">
+                ${b.status === 'ok' ? html`<a href="/settings/backups/${b.id}/download">Download</a>` : ''}
+                ${b.status !== 'running' ? html`<form method="post" action="/settings/backups/${b.id}/delete" class="inline" data-confirm="Delete this backup?">${csrfField(v.csrf)}<button class="link danger">Delete</button></form>` : ''}
+              </span></li>`,
+          )}</ul>`
+        : html`<p class="muted">No backups yet.</p>`}
+      <p class="muted">Downloaded backups contain everything in your database, including sign-in details, so keep them private and store a copy off this server. To restore, run <code>sudo ./scripts/restore.sh backup.tar.gz</code> on the server.</p>
     </section>
 
     <section class="card">

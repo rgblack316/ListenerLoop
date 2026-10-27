@@ -259,6 +259,26 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX idx_deliveries_hook ON webhook_deliveries(webhook_id, created_at);
     `,
   },
+  {
+    id: 12,
+    name: 'backups',
+    sql: `
+      CREATE TABLE backups (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN ('manual', 'scheduled')),
+        status TEXT NOT NULL CHECK (status IN ('running', 'ok', 'failed')),
+        file TEXT,
+        size_bytes INTEGER,
+        includes_audio INTEGER NOT NULL DEFAULT 0,
+        storage_key TEXT,
+        error TEXT,
+        started_by TEXT,
+        created_at TEXT NOT NULL,
+        finished_at TEXT
+      );
+      CREATE INDEX idx_backups_created ON backups(created_at);
+    `,
+  },
 ];
 
 export function migrate(db: DB): void {

@@ -40,6 +40,8 @@ import {
   type Show,
   ftsQuery,
 } from '../db/repo.js';
+import { backupDir, backupRunning, loadBackupSettings, nextSlot } from '../backup.js';
+import { registerBackupRoutes } from './backups.js';
 import { registerUserRoutes } from './users.js';
 import { registerWebhookRoutes } from './webhooks.js';
 import { registerExportRoutes } from './export.js';
@@ -526,10 +528,27 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
       keepOriginals: config.keepOriginals,
       mp3BitrateKbps: config.mp3BitrateKbps,
     },
+    backups: {
+      settings: loadBackupSettings(repo),
+      list: repo.listBackups(15),
+      next: nextSlot(loadBackupSettings(repo), new Date())?.toISOString() ?? null,
+      storage: storage.name,
+      running: backupRunning(),
+      dir: backupDir(ctx),
+    },
     result,
   });
 
-  app.get('/settings', ownerAuthed((_req, reply, session) => page(reply, settingsPage(settingsView(session)))));
+  const BACKUP_FLASH: Record<string, { ok: boolean; message: string }> = {
+    started: { ok: true, message: 'Backup started. Reload this page in a moment to see it finish.' },
+    saved: { ok: true, message: 'Backup schedule saved.' },
+    deleted: { ok: true, message: 'Backup deleted.' },
+    running: { ok: false, message: 'A backup is already running.' },
+  };
+  app.get('/settings', ownerAuthed((req, reply, session) => {
+    const flash = BACKUP_FLASH[(req.query as { backup?: string }).backup ?? ''];
+    return page(reply, settingsPage(settingsView(session, flash ? { section: 'backups', ...flash } : undefined)));
+  }));
 
   app.post(
     '/settings/test-email',
@@ -580,6 +599,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
   registerUserRoutes(app, ctx, kit);
   registerWebhookRoutes(app, ctx, kit);
   registerExportRoutes(app, ctx, kit);
+  registerBackupRoutes(app, ctx, kit);
 
   // ---------------------------------------------------------------- shows
   const blankValues = (): ShowFormValues => ({

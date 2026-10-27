@@ -62,6 +62,20 @@ export interface WebhookDelivery {
   delivered_at: string | null;
 }
 
+export interface Backup {
+  id: string;
+  kind: 'manual' | 'scheduled';
+  status: 'running' | 'ok' | 'failed';
+  file: string | null;
+  size_bytes: number | null;
+  includes_audio: number;
+  storage_key: string | null;
+  error: string | null;
+  started_by: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
 export interface Show {
   id: string;
   name: string;
@@ -647,6 +661,47 @@ export class Repo {
   /** Keeps the delivery log small: drops entries older than the given number of days. */
   pruneDeliveries(days = 30): void {
     this.db.prepare("DELETE FROM webhook_deliveries WHERE status != 'pending' AND created_at < ?").run(new Date(Date.now() - days * 86_400_000).toISOString());
+  }
+
+  // ---- app settings (small key/value pairs) ----
+  getSetting(key: string): string | undefined {
+    return (this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value;
+  }
+
+  setSetting(key: string, value: string): void {
+    this.db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+  }
+
+  // ---- backups ----
+  insertBackup(b: { id: string; kind: Backup['kind']; started_by: string | null }): void {
+    this.db.prepare("INSERT INTO backups (id, kind, status, started_by, created_at) VALUES (?, ?, 'running', ?, ?)").run(b.id, b.kind, b.started_by, nowIso());
+  }
+
+  updateBackup(id: string, fields: Partial<Omit<Backup, 'id' | 'created_at'>>): void {
+    const keys = Object.keys(fields);
+    if (!keys.length) return;
+    this.db.prepare(`UPDATE backups SET ${keys.map((k) => `${k} = @${k}`).join(', ')} WHERE id = @__id`).run({ ...fields, __id: id });
+  }
+
+  getBackup(id: string): Backup | undefined {
+    return this.db.prepare('SELECT * FROM backups WHERE id = ?').get(id) as Backup | undefined;
+  }
+
+  listBackups(limit = 30): Backup[] {
+    return this.db.prepare('SELECT * FROM backups ORDER BY created_at DESC, rowid DESC LIMIT ?').all(limit) as Backup[];
+  }
+
+  deleteBackup(id: string): void {
+    this.db.prepare('DELETE FROM backups WHERE id = ?').run(id);
+  }
+
+  lastScheduledBackup(): Backup | undefined {
+    return this.db.prepare("SELECT * FROM backups WHERE kind = 'scheduled' ORDER BY created_at DESC LIMIT 1").get() as Backup | undefined;
+  }
+
+  /** A backup left "running" by a restart can never finish; mark it failed. */
+  failInterruptedBackups(): number {
+    return this.db.prepare("UPDATE backups SET status = 'failed', error = 'Interrupted by a restart.', finished_at = ? WHERE status = 'running'").run(nowIso()).changes;
   }
 
   deleteExpiredSessions(): void {
