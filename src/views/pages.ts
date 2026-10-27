@@ -30,7 +30,17 @@ export function loginPage(error?: string): string {
 // ---------------------------------------------------------------- inbox
 const msgBase = (m: { show_slug: string; id: string }): string => `/shows/${m.show_slug}/messages/${m.id}`;
 
-export function messageRow(m: MessageWithShow): Raw {
+/** Turn a snippet with \u0001/\u0002 match markers into escaped HTML with <mark> around matches. */
+function snippetHtml(snip: string): Raw {
+  const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return raw(snip.split('\u0001').map((part, i) => {
+    if (i === 0) return esc(part);
+    const [hit, rest = ''] = part.split('\u0002');
+    return `<mark>${esc(hit ?? '')}</mark>${esc(rest)}`;
+  }).join(''));
+}
+
+export function messageRow(m: MessageWithShow, snippet?: string): Raw {
   const unread = m.status === 'ready' && !m.read_at;
   return html`<li id="row-${m.id}" class="msg${unread ? ' unread' : ''}">
     <button class="star${m.starred ? ' on' : ''}" hx-post="${msgBase(m)}/star" hx-target="#row-${m.id}" hx-swap="outerHTML"
@@ -39,6 +49,7 @@ export function messageRow(m: MessageWithShow): Raw {
       <span class="who">${m.sender_name}${unread ? html` <span class="badge new">new</span>` : ''}${m.status === 'failed' ? html` <span class="badge bad">failed</span>` : ''}${m.status === 'processing' ? html` <span class="badge">processing</span>` : ''}${m.status === 'ready' && m.email_error ? html` <span class="badge bad">email failed</span>` : ''}</span>
       ${m.status === 'failed' ? html`<span class="meta fail">${m.error ?? 'Processing failed.'}</span>` : ''}
       <span class="meta">${m.show_name}${m.duration_seconds !== null ? ` · ${durationText(m.duration_seconds)}` : ''} · ${timeTag(m.created_at)}</span>
+      ${snippet ? html`<span class="snippet">${snippetHtml(snippet)}</span>` : ''}
     </a>
     <span class="row-actions">
       ${m.status === 'failed' && m.original_key ? html`<button class="link" hx-post="${msgBase(m)}/retry" hx-target="#row-${m.id}" hx-swap="outerHTML">Retry</button>` : ''}
@@ -52,6 +63,10 @@ export function messageRow(m: MessageWithShow): Raw {
 export interface InboxView {
   csrf: string;
   messages: MessageWithShow[];
+  /** Transcript excerpts with match markers, keyed by message id (search only). */
+  snippets: Map<string, string>;
+  /** The active search text, or '' when not searching. */
+  search: string;
   filter: InboxFilter;
   /** Set for a single show's inbox; omitted for the combined view. */
   show?: Show;
@@ -64,9 +79,10 @@ export interface InboxView {
 
 const inboxBase = (show?: Show): string => (show ? `/shows/${show.slug}` : '/inbox');
 
-function inboxUrl(show: Show | undefined, filter: InboxFilter, page: number): string {
+function inboxUrl(show: Show | undefined, filter: InboxFilter, page: number, search = ''): string {
   const q = new URLSearchParams();
-  if (filter !== 'inbox') q.set('filter', filter);
+  if (search) q.set('q', search);
+  else if (filter !== 'inbox') q.set('filter', filter);
   if (page > 1) q.set('page', String(page));
   const s = q.toString();
   return `${inboxBase(show)}${s ? `?${s}` : ''}`;
@@ -83,20 +99,26 @@ export function inboxPage(v: InboxView): string {
       ${v.show ? html`<a href="/shows/${v.show.slug}/settings">Settings and embed code</a>` : ''}
     </div>
     <div class="toolbar">
-      <div class="tabs" role="tablist" aria-label="Filter messages">
+      ${v.search
+        ? html`<p class="search-status">${v.total} ${v.total === 1 ? 'result' : 'results'} for &ldquo;${v.search}&rdquo; &middot; <a href="${inboxUrl(v.show, 'inbox', 1)}">Clear search</a></p>`
+        : html`<div class="tabs" role="tablist" aria-label="Filter messages">
         ${INBOX_FILTERS.map(
           (f) => html`<a href="${inboxUrl(v.show, f, 1)}" class="tab${f === v.filter ? ' active' : ''}" ${f === v.filter ? raw('aria-current="page"') : ''}>${FILTER_LABELS[f]} <span class="count">${v.counts[f]}</span></a>`,
         )}
-      </div>
+      </div>`}
+      <form class="search" method="get" action="${inboxBase(v.show)}" role="search">
+        <input type="search" name="q" value="${v.search}" placeholder="Search name, email, notes, transcript" aria-label="Search messages" maxlength="200">
+        <button type="submit">Search</button>
+      </form>
     </div>
     ${v.messages.length === 0
-      ? html`<p class="empty">${!v.hasShows ? html`No shows yet. <a href="/shows/new">Add your first show</a> to get an embed snippet.` : 'No messages here.'}</p>`
-      : html`<ul class="msgs">${v.messages.map(messageRow)}</ul>`}
+      ? html`<p class="empty">${!v.hasShows ? html`No shows yet. <a href="/shows/new">Add your first show</a> to get an embed snippet.` : v.search ? 'No messages match that search.' : 'No messages here.'}</p>`
+      : html`<ul class="msgs">${v.messages.map((m) => messageRow(m, v.snippets.get(m.id)))}</ul>`}
     ${v.pages > 1
       ? html`<nav class="pager" aria-label="Pages">
-          ${v.page > 1 ? html`<a href="${inboxUrl(v.show, v.filter, v.page - 1)}">&larr; Newer</a>` : html`<span></span>`}
+          ${v.page > 1 ? html`<a href="${inboxUrl(v.show, v.filter, v.page - 1, v.search)}">&larr; Newer</a>` : html`<span></span>`}
           <span>Page ${v.page} of ${v.pages}</span>
-          ${v.page < v.pages ? html`<a href="${inboxUrl(v.show, v.filter, v.page + 1)}">Older &rarr;</a>` : html`<span></span>`}
+          ${v.page < v.pages ? html`<a href="${inboxUrl(v.show, v.filter, v.page + 1, v.search)}">Older &rarr;</a>` : html`<span></span>`}
         </nav>`
       : ''}`,
   });

@@ -311,7 +311,8 @@ Each phase is done only when its acceptance criteria pass.
 
 ### Phase 3: Quality of life
 
-- [ ] Search and bulk zip download (star, archive and notes shipped in Phase 1).
+- [x] Search: SQLite FTS5 index over name, email, notes and transcript (migration 3), search box in every inbox, prefix and accent-insensitive matching, transcript snippets with highlights. Transcripts become searchable as soon as `messages.transcript` is written.
+- [ ] Bulk zip download (star, archive and notes shipped in Phase 1).
 - [ ] Waveform display in the player.
 - [ ] Optional transcription adapter (whisper.cpp or API), with transcript search.
 - [ ] Loudness normalization option.

@@ -21,6 +21,7 @@ import {
   showOrigins,
   type InboxFilter,
   type Show,
+  ftsQuery,
 } from '../db/repo.js';
 import { cleanText, encryptSecret, isValidEmail, parseRange, randomToken, safeFilePart, slugify, ulid } from '../lib/util.js';
 import { homePage, inboxPage, loginPage, messagePage, messageRow, settingsPage, showFormPage, showsPage, type SettingsView, type ShowFormValues } from '../views/pages.js';
@@ -168,17 +169,21 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
   );
 
   const renderInbox = (req: FastifyRequest, reply: FastifyReply, session: AdminSession, show?: Show): FastifyReply => {
-    const q = req.query as { filter?: string; page?: string };
-    const filter: InboxFilter = INBOX_FILTERS.includes(q.filter as InboxFilter) ? (q.filter as InboxFilter) : 'inbox';
+    const q = req.query as { filter?: string; page?: string; q?: string };
+    const search = (q.q ?? '').trim().slice(0, 200);
+    const searching = ftsQuery(search) !== null;
+    // A search looks through everything in this inbox, whichever tab was open.
+    const filter: InboxFilter = searching ? 'all' : INBOX_FILTERS.includes(q.filter as InboxFilter) ? (q.filter as InboxFilter) : 'inbox';
     const showId = show?.id;
-    const total = repo.countMessages(filter, showId);
+    const total = repo.countMessages(filter, showId, searching ? search : undefined);
     const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
     const pageNo = Math.min(Math.max(1, Number.parseInt(q.page ?? '1', 10) || 1), pages);
-    const messages = repo.listMessages(filter, { showId, limit: PAGE_SIZE, offset: (pageNo - 1) * PAGE_SIZE });
+    const messages = repo.listMessages(filter, { showId, limit: PAGE_SIZE, offset: (pageNo - 1) * PAGE_SIZE, search: searching ? search : undefined });
+    const snippets = searching ? repo.transcriptSnippets(search, messages.map((m) => m.id)) : new Map<string, string>();
     const counts = Object.fromEntries(INBOX_FILTERS.map((f) => [f, repo.countMessages(f, showId)])) as Record<InboxFilter, number>;
     return page(
       reply,
-      inboxPage({ csrf: session.csrf, messages, filter, show, hasShows: accessibleShows(session).length > 0, counts, page: pageNo, pages, total }),
+      inboxPage({ csrf: session.csrf, messages, snippets, search: searching ? search : '', filter, show, hasShows: accessibleShows(session).length > 0, counts, page: pageNo, pages, total }),
     );
   };
 

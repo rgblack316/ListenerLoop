@@ -88,6 +88,34 @@ const MIGRATIONS: Migration[] = [
     name: 'email alert status',
     sql: `ALTER TABLE messages ADD COLUMN email_error TEXT;`,
   },
+  {
+    id: 3,
+    name: 'full-text search',
+    // External-content FTS5 index over the searchable text of each message. Triggers keep it in step,
+    // so transcripts (when added later) become searchable just by being written to messages.transcript.
+    sql: `
+      CREATE VIRTUAL TABLE messages_fts USING fts5(
+        sender_name, sender_email, notes, transcript,
+        content='messages', content_rowid='rowid', tokenize='unicode61 remove_diacritics 2'
+      );
+      INSERT INTO messages_fts(rowid, sender_name, sender_email, notes, transcript)
+        SELECT rowid, sender_name, sender_email, notes, transcript FROM messages;
+      CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages BEGIN
+        INSERT INTO messages_fts(rowid, sender_name, sender_email, notes, transcript)
+          VALUES (new.rowid, new.sender_name, new.sender_email, new.notes, new.transcript);
+      END;
+      CREATE TRIGGER messages_fts_ad AFTER DELETE ON messages BEGIN
+        INSERT INTO messages_fts(messages_fts, rowid, sender_name, sender_email, notes, transcript)
+          VALUES ('delete', old.rowid, old.sender_name, old.sender_email, old.notes, old.transcript);
+      END;
+      CREATE TRIGGER messages_fts_au AFTER UPDATE OF sender_name, sender_email, notes, transcript ON messages BEGIN
+        INSERT INTO messages_fts(messages_fts, rowid, sender_name, sender_email, notes, transcript)
+          VALUES ('delete', old.rowid, old.sender_name, old.sender_email, old.notes, old.transcript);
+        INSERT INTO messages_fts(rowid, sender_name, sender_email, notes, transcript)
+          VALUES (new.rowid, new.sender_name, new.sender_email, new.notes, new.transcript);
+      END;
+    `,
+  },
 ];
 
 export function migrate(db: DB): void {

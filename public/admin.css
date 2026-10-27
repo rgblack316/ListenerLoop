@@ -103,3 +103,10 @@ textarea[readonly] { font-family: ui-monospace, SFMono-Regular, Menlo, monospace
   .show-layout { grid-template-columns: minmax(0, 1fr) 420px; }
   .preview { position: sticky; top: 16px; }
 }
+
+.search { display: flex; gap: 6px; }
+.search input { min-width: 0; width: 260px; max-width: 100%; }
+.search-status { margin: 0; color: var(--muted, #555); }
+.snippet { display: block; margin-top: 2px; font-size: 0.9em; }
+mark { background: #fde68a; color: inherit; padding: 0 1px; border-radius: 2px; }
+@media (prefers-color-scheme: dark) { mark { background: #7a5c00; } }

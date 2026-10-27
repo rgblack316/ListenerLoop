@@ -57,6 +57,19 @@ export const INBOX_FILTERS: InboxFilter[] = ['inbox', 'new', 'starred', 'archive
 
 export const nowIso = (): string => new Date().toISOString();
 
+/**
+ * Turn what someone typed into a safe FTS5 query: every word is quoted (so punctuation and operators
+ * like AND, OR, NEAR, - or * are plain text) and matches as a prefix. Returns null for an empty search.
+ */
+export function ftsQuery(input: string): string | null {
+  const words = input
+    .split(/\s+/)
+    .map((w) => w.replace(/"/g, ''))
+    .filter((w) => /[\p{L}\p{N}]/u.test(w))
+    .slice(0, 12);
+  return words.length ? words.map((w) => `"${w}"*`).join(' ') : null;
+}
+
 export function showOrigins(show: Pick<Show, 'allowed_origins'>): string[] {
   try {
     const parsed: unknown = JSON.parse(show.allowed_origins);
@@ -186,9 +199,14 @@ export class Repo {
     this.db.prepare(`UPDATE messages SET ${sets} WHERE id = @__id`).run({ ...fields, __id: id });
   }
 
-  private filterSql(filter: InboxFilter, showId?: string): { where: string; params: Record<string, unknown> } {
+  private filterSql(filter: InboxFilter, showId?: string, search?: string): { where: string; params: Record<string, unknown> } {
     const clauses = ['m.deleted_at IS NULL'];
     const params: Record<string, unknown> = {};
+    const fts = search ? ftsQuery(search) : null;
+    if (fts) {
+      clauses.push('m.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH @fts)');
+      params.fts = fts;
+    }
     if (showId) {
       clauses.push('m.show_id = @show_id');
       params.show_id = showId;
@@ -215,8 +233,8 @@ export class Repo {
     return { where: clauses.join(' AND '), params };
   }
 
-  listMessages(filter: InboxFilter, opts: { showId?: string; limit: number; offset: number }): MessageWithShow[] {
-    const { where, params } = this.filterSql(filter, opts.showId);
+  listMessages(filter: InboxFilter, opts: { showId?: string; limit: number; offset: number; search?: string }): MessageWithShow[] {
+    const { where, params } = this.filterSql(filter, opts.showId, opts.search);
     return this.db
       .prepare(
         `SELECT m.*, s.name AS show_name, s.slug AS show_slug FROM messages m JOIN shows s ON s.id = m.show_id
@@ -225,10 +243,27 @@ export class Repo {
       .all({ ...params, limit: opts.limit, offset: opts.offset }) as MessageWithShow[];
   }
 
-  countMessages(filter: InboxFilter, showId?: string): number {
-    const { where, params } = this.filterSql(filter, showId);
+  countMessages(filter: InboxFilter, showId?: string, search?: string): number {
+    const { where, params } = this.filterSql(filter, showId, search);
     const row = this.db.prepare(`SELECT COUNT(*) AS n FROM messages m WHERE ${where}`).get(params) as { n: number };
     return row.n;
+  }
+
+  /** Matching text from the transcript for each message id, with matches wrapped in \u0001 and \u0002. */
+  transcriptSnippets(search: string, ids: string[]): Map<string, string> {
+    const out = new Map<string, string>();
+    const fts = ftsQuery(search);
+    if (!fts || ids.length === 0) return out;
+    const marks = ids.map(() => '?').join(',');
+    const rows = this.db
+      .prepare(
+        `SELECT m.id AS id, snippet(messages_fts, 3, char(1), char(2), '…', 16) AS snip
+         FROM messages_fts JOIN messages m ON m.rowid = messages_fts.rowid
+         WHERE messages_fts MATCH ? AND m.id IN (${marks})`,
+      )
+      .all(fts, ...ids) as { id: string; snip: string | null }[];
+    for (const r of rows) if (r.snip && r.snip.includes('\u0001')) out.set(r.id, r.snip);
+    return out;
   }
 
   countSinceForShow(showId: string, sinceIso: string): number {
