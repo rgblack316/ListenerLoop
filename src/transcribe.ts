@@ -1,3 +1,4 @@
+import { fireWebhooks, messagePayload } from './webhook.js';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -104,6 +105,7 @@ export async function transcribeMessage(ctx: AppContext, id: string): Promise<vo
       transcript_error: null,
       transcript_seconds: Math.round((Date.now() - started) / 100) / 10,
     });
+    fireWebhooks(ctx, msg.show_id, 'message.transcribed', messagePayload(ctx, 'message.transcribed', repo.getMessage(id)!));
     log.info({ messageId: id, seconds: (Date.now() - started) / 1000, audioSeconds: msg.duration_seconds }, 'transcribed message');
   } catch (err) {
     log.warn({ err, messageId: id }, 'transcription failed');

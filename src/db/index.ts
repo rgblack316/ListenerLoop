@@ -228,6 +228,37 @@ export const MIGRATIONS: Migration[] = [
       DROP TABLE admin;
     `,
   },
+  {
+    id: 11,
+    name: 'webhooks',
+    sql: `
+      CREATE TABLE webhooks (
+        id TEXT PRIMARY KEY,
+        show_id TEXT NOT NULL REFERENCES shows(id) ON DELETE CASCADE,
+        url TEXT NOT NULL,
+        secret TEXT NOT NULL,
+        events TEXT NOT NULL DEFAULT '["message.ready"]',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_webhooks_show ON webhooks(show_id);
+      CREATE TABLE webhook_deliveries (
+        id TEXT PRIMARY KEY,
+        webhook_id TEXT NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+        event TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'sent', 'failed')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT,
+        response_code INTEGER,
+        error TEXT,
+        created_at TEXT NOT NULL,
+        delivered_at TEXT
+      );
+      CREATE INDEX idx_deliveries_due ON webhook_deliveries(status, next_attempt_at);
+      CREATE INDEX idx_deliveries_hook ON webhook_deliveries(webhook_id, created_at);
+    `,
+  },
 ];
 
 export function migrate(db: DB): void {

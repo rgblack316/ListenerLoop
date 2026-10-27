@@ -44,7 +44,7 @@ export interface SafeGetResult {
 }
 
 /** Resolve a name and only ever connect to a public address, so DNS tricks cannot point us at the inside network. */
-function guardedLookup(allowPrivate: boolean): net.LookupFunction {
+export function guardedLookup(allowPrivate: boolean): net.LookupFunction {
   return (hostname, options, callback) => {
     dns.lookup(hostname, { all: true }, (err, addresses) => {
       if (err) return callback(err, '', 4);
@@ -61,7 +61,7 @@ function guardedLookup(allowPrivate: boolean): net.LookupFunction {
   };
 }
 
-function checkUrl(raw: string, allowPrivate: boolean): URL {
+export function checkUrl(raw: string, allowPrivate: boolean): URL {
   let url: URL;
   try {
     url = new URL(raw);

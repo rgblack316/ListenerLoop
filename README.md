@@ -63,6 +63,8 @@ Paste the embed snippet from the **Shows** page into the podcast site:
 <script src="https://YOUR-APP-DOMAIN/embed.js" data-site-key="SITE_KEY" async></script>
 ```
 
+**Webhooks and export.** Owners can add up to 3 webhooks per show (show settings, then **Webhooks**): ListenerLoop POSTs a JSON message to your https address when a message is ready, a transcript finishes, or a reply is sent. Requests are signed (`X-ListenerLoop-Signature: sha256=` HMAC of `timestamp.body`), failures retry up to 5 times, and a **Send a test** button checks your server. Every inbox has **Export: CSV / JSON** links that respect the current tab or search and the user's show access.
+
 Sign in at `https://YOUR-APP-DOMAIN/login`. The first owner is made with `create-admin`; after that, owners add people from **Users**: an emailed invitation link (valid 7 days) lets them choose their own password. Roles: **owner** (everything), **editor** (listen, star, archive, delete, reply, transcribe, download on assigned shows), **viewer** (read-only on assigned shows). Everyone can change their password and turn on two-step sign-in (authenticator app plus recovery codes) from **Account**; an owner can make a password reset link or switch off two-step for a locked-out user. Each show has its own inbox at `/shows/<slug>` (for example `/shows/bible-bytes`), and `/inbox` combines all of them. CLI helpers: `docker compose exec app node dist/cli.js` with `create-admin` (creates or resets the first owner), `add-show`, `list-shows`, `set-origins`, `rotate-key`.
 
 - **Storage:** with the `s3` driver, use a private bucket and an access key made just for ListenerLoop, not your public podcast CDN. Audio is played through the app (a signed link that expires after 5 minutes), never from a public URL.
@@ -142,8 +144,7 @@ To restore on the same server, run `restore.sh` with the archive. It asks for co
 1. **MVP (built):** recorder, upload, MP3 conversion, storage drivers, admin inbox, email alert.
 2. **Hardening (done):** abuse limits, retention, settings, live preview, backups, in-app browser check (Facebook tested, Instagram assumed).
 3. **Quality of life (built):** search, bulk download, waveforms, optional transcription, loudness normalization.
-4. **Built:** reply to listeners by email, cover art, multi-user admin with per-show access.
-5. **Later:** webhooks and export.
+4. **Built:** reply to listeners by email, cover art, multi-user admin with per-show access, webhooks and CSV/JSON export.
 
 Details and acceptance criteria are in [PLAN.md](PLAN.md).
 

@@ -1,3 +1,4 @@
+import { deliverDue } from './webhook.js';
 import './env.js';
 import { buildApp } from './app.js';
 import { ConfigError, loadConfig } from './config.js';
@@ -42,11 +43,16 @@ async function main(): Promise<void> {
   };
   purgeAndLog();
   ctx.repo.deleteExpiredSessions();
+  ctx.repo.pruneDeliveries();
   const sweep = setInterval(() => {
     ctx.repo.deleteExpiredSessions();
     purgeAndLog();
   }, 60 * 60 * 1000);
   sweep.unref();
+  // Retry webhook deliveries that failed earlier, and pick up any left over from a restart.
+  const hooks = setInterval(() => void deliverDue(ctx), 30_000);
+  hooks.unref();
+  void deliverDue(ctx);
 
   let stopping = false;
   const shutdown = async (signal: string): Promise<void> => {
@@ -54,6 +60,7 @@ async function main(): Promise<void> {
     stopping = true;
     app.log.info({ signal }, 'shutting down');
     clearInterval(sweep);
+    clearInterval(hooks);
     await app.close();
     // Let an in-flight conversion finish, but do not hang forever.
     await Promise.race([Promise.all([ctx.queue.idle(), ctx.transcribeQueue.idle()]), new Promise((r) => setTimeout(r, 30_000))]);

@@ -35,6 +35,33 @@ export interface Invite {
   used_at: string | null;
 }
 
+export const WEBHOOK_EVENTS = ['message.ready', 'message.transcribed', 'reply.sent'] as const;
+export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
+
+export interface Webhook {
+  id: string;
+  show_id: string;
+  url: string;
+  secret: string;
+  events: string; // JSON array of WebhookEvent
+  enabled: number;
+  created_at: string;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  webhook_id: string;
+  event: string;
+  payload: string;
+  status: 'pending' | 'sent' | 'failed';
+  attempts: number;
+  next_attempt_at: string | null;
+  response_code: number | null;
+  error: string | null;
+  created_at: string;
+  delivered_at: string | null;
+}
+
 export interface Show {
   id: string;
   name: string;
@@ -559,6 +586,67 @@ export class Repo {
 
   deleteSession(tokenHash: string): void {
     this.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash);
+  }
+
+  // ---- webhooks ----
+  listWebhooks(showId: string): Webhook[] {
+    return this.db.prepare('SELECT * FROM webhooks WHERE show_id = ? ORDER BY created_at').all(showId) as Webhook[];
+  }
+
+  getWebhook(id: string): Webhook | undefined {
+    return this.db.prepare('SELECT * FROM webhooks WHERE id = ?').get(id) as Webhook | undefined;
+  }
+
+  createWebhook(showId: string, url: string, events: WebhookEvent[]): Webhook {
+    const hook: Webhook = { id: randomToken(8), show_id: showId, url, secret: `whsec_${randomToken(24)}`, events: JSON.stringify(events), enabled: 1, created_at: nowIso() };
+    this.db
+      .prepare('INSERT INTO webhooks (id, show_id, url, secret, events, enabled, created_at) VALUES (@id, @show_id, @url, @secret, @events, @enabled, @created_at)')
+      .run(hook);
+    return hook;
+  }
+
+  updateWebhook(id: string, fields: Partial<Pick<Webhook, 'url' | 'events' | 'enabled' | 'secret'>>): void {
+    const keys = Object.keys(fields);
+    if (!keys.length) return;
+    this.db.prepare(`UPDATE webhooks SET ${keys.map((k) => `${k} = @${k}`).join(', ')} WHERE id = @__id`).run({ ...fields, __id: id });
+  }
+
+  deleteWebhook(id: string): void {
+    this.db.prepare('DELETE FROM webhooks WHERE id = ?').run(id);
+  }
+
+  enqueueDelivery(webhookId: string, event: string, payload: string): string {
+    const id = randomToken(12);
+    const now = nowIso();
+    this.db
+      .prepare("INSERT INTO webhook_deliveries (id, webhook_id, event, payload, status, next_attempt_at, created_at) VALUES (?, ?, ?, ?, 'pending', ?, ?)")
+      .run(id, webhookId, event, payload, now, now);
+    return id;
+  }
+
+  /** Pending deliveries that are due, oldest first, with their hook's address and secret. */
+  dueDeliveries(limit = 20): Array<WebhookDelivery & { url: string; secret: string; enabled: number }> {
+    return this.db
+      .prepare(
+        `SELECT d.*, w.url, w.secret, w.enabled FROM webhook_deliveries d JOIN webhooks w ON w.id = d.webhook_id
+         WHERE d.status = 'pending' AND d.next_attempt_at <= ? ORDER BY d.next_attempt_at LIMIT ?`,
+      )
+      .all(nowIso(), limit) as Array<WebhookDelivery & { url: string; secret: string; enabled: number }>;
+  }
+
+  updateDelivery(id: string, fields: Partial<Omit<WebhookDelivery, 'id' | 'webhook_id' | 'created_at'>>): void {
+    const keys = Object.keys(fields);
+    if (!keys.length) return;
+    this.db.prepare(`UPDATE webhook_deliveries SET ${keys.map((k) => `${k} = @${k}`).join(', ')} WHERE id = @__id`).run({ ...fields, __id: id });
+  }
+
+  recentDeliveries(webhookId: string, limit = 8): WebhookDelivery[] {
+    return this.db.prepare('SELECT * FROM webhook_deliveries WHERE webhook_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?').all(webhookId, limit) as WebhookDelivery[];
+  }
+
+  /** Keeps the delivery log small: drops entries older than the given number of days. */
+  pruneDeliveries(days = 30): void {
+    this.db.prepare("DELETE FROM webhook_deliveries WHERE status != 'pending' AND created_at < ?").run(new Date(Date.now() - days * 86_400_000).toISOString());
   }
 
   deleteExpiredSessions(): void {

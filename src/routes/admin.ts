@@ -41,6 +41,8 @@ import {
   ftsQuery,
 } from '../db/repo.js';
 import { registerUserRoutes } from './users.js';
+import { registerWebhookRoutes } from './webhooks.js';
+import { registerExportRoutes } from './export.js';
 import { hashRecoveryCode, verifyTotp } from '../totp.js';
 import { hmacHex, safeEqual } from '../lib/util.js';
 import { cleanText, isValidEmail, parseRange, randomToken, safeFilePart, slugify, ulid } from '../lib/util.js';
@@ -574,7 +576,10 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
   );
 
   // User management, account and sign-in links live in routes/users.ts
-  registerUserRoutes(app, ctx, { authed, mutating, ownerAuthed, ownerMutating, page, sameOrigin, field, forbidden, accessibleShows, notFound });
+  const kit = { authed, mutating, ownerAuthed, ownerMutating, page, sameOrigin, field, forbidden, accessibleShows, notFound };
+  registerUserRoutes(app, ctx, kit);
+  registerWebhookRoutes(app, ctx, kit);
+  registerExportRoutes(app, ctx, kit);
 
   // ---------------------------------------------------------------- shows
   const blankValues = (): ShowFormValues => ({

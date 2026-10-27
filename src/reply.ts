@@ -1,3 +1,4 @@
+import { fireWebhooks, messagePayload } from './webhook.js';
 import type { AppContext } from './context.js';
 import type { MessageWithShow } from './db/repo.js';
 import { ulid } from './lib/util.js';
@@ -71,6 +72,7 @@ export async function sendReply(ctx: AppContext, m: MessageWithShow, input: { su
     });
     repo.updateReply(id, { status: 'sent', error: null });
     if (!m.replied_at) repo.updateMessage(m.id, { replied_at: new Date().toISOString() });
+    fireWebhooks(ctx, m.show_id, 'reply.sent', messagePayload(ctx, 'reply.sent', repo.getMessage(m.id)!, repo.getReply(id)));
     return { ok: true, id };
   } catch (err) {
     log.error({ err, messageId: m.id }, 'reply email failed');

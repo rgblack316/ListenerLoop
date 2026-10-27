@@ -119,6 +119,7 @@ export function inboxPage(v: InboxView): string {
           (f) => html`<a href="${inboxUrl(v.show, f, 1)}" class="tab${f === v.filter ? ' active' : ''}" ${f === v.filter ? raw('aria-current="page"') : ''}>${FILTER_LABELS[f]} <span class="count">${v.counts[f]}</span></a>`,
         )}
       </div>`}
+      <p class="export-links muted">Export: <a href="${inboxBase(v.show)}/export.csv?${v.search ? `q=${encodeURIComponent(v.search)}` : `filter=${v.filter}`}" download>CSV</a> &middot; <a href="${inboxBase(v.show)}/export.json?${v.search ? `q=${encodeURIComponent(v.search)}` : `filter=${v.filter}`}" download>JSON</a></p>
       <form class="search" method="get" action="${inboxBase(v.show)}" role="search">
         <input type="search" name="q" value="${v.search}" placeholder="Search messages" aria-label="Search messages" maxlength="200">
         <button class="btn" type="submit">Search</button>
@@ -383,6 +384,7 @@ export function showFormPage(opts: {
     body: html`<p><a href="/shows">&larr; Back to shows</a></p>
     <h1 class="with-cover">${show ? coverThumb(show, 'lg') : ''}<span>${show ? `Edit ${show.name}` : 'Add show'}</span></h1>
     ${opts.flash ? html`<p class="notice" role="status">${opts.flash}</p>` : ''}
+    ${show ? html`<p><a href="/shows/${show.slug}/webhooks">Webhooks</a></p>` : ''}
     ${show && show.feed_url
       ? html`<div class="${show.cover_error ? 'alert' : 'notice'}">
           ${show.cover_error ? html`<p>Cover art could not be fetched: ${show.cover_error}</p>` : html`<p>${show.cover_key ? 'Cover art is loaded from your RSS feed.' : 'Cover art has not been fetched yet.'}</p>`}

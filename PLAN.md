@@ -152,6 +152,8 @@ The admin is server-rendered, so there is no JSON admin API. Pages and form post
 | `POST /shows/:slug/messages/:id/resend-alert` | Send the email alert again after a failure. |
 | `GET /settings` | Settings page: email test, storage check, read-only configuration. |
 | `GET /users`, `GET /users/:id` | Owner only: manage users, invitations and reset links. |
+| `GET /shows/:slug/webhooks` | Owner only: webhooks for a show. |
+| `GET /inbox/export.csv`, `/shows/:slug/export.json` | Everyone: export visible messages (CSV or JSON). |
 | `GET /account` | Everyone: name, password, two-step sign-in. |
 | `GET /invite/:token`, `GET /reset/:token` | Public: accept an invitation or choose a new password. |
 | `POST /settings/test-email`, `/settings/test-storage`, `/settings/password` | Send a test email to the admin; write, read and delete a test file in storage; change the admin password (signs out other sessions, throttled). |
@@ -326,7 +328,7 @@ Each phase is done only when its acceptance criteria pass.
 
 - [x] Reply to listeners who chose to share an email address, from the message page in admin. Sent through the configured mail provider from `REPLY_FROM_ADDRESS` (for example replies@listenerloop.app) with the show's name as the display name and the show's email address as Reply-To, so the listener's answer goes straight to the host. The show's email address is now required in show settings. Replies are stored with the message (migration 8), shown as a thread, retryable if sending fails, limited to 10 per message and 30 per hour, and deleted with the message.
 - [x] Multi-user admin (migration 10). Roles: owner (everything), editor (all message actions on assigned shows), viewer (read-only on assigned shows). Owners invite by emailed link (7 days, invitee sets the password; the link is shown for copying if email is off or fails), make password reset links, enable or disable, remove and re-scope users, and cannot remove the last active owner. Per-show access goes through `accessibleShows()`; message, audio, cover, zip and reply routes all use it. Optional TOTP per user with recovery codes, an owner reset, and a two-step login. Existing single admin becomes the first owner; sessions are cleared once on upgrade.
-- Webhooks and an RSS or JSON export of messages.
+- [x] Webhooks (migration 11): up to 3 per show, managed by owners; events `message.ready`, `message.transcribed`, `reply.sent`; HMAC-SHA256 signed (`X-ListenerLoop-Signature`), https only, sent through the same public-address-only client as cover art (no redirects), retried 5 times with growing delays from a database-backed log (survives restarts), test button, 30 days of delivery history. CSV and JSON export of the inbox (or one show), honoring the filter, search and the user's show access; spreadsheet formulas are defused. A private RSS feed was considered and left out.
 
 ## Risks and open questions
 

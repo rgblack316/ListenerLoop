@@ -1,3 +1,4 @@
+import { fireWebhooks, messagePayload } from './webhook.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
@@ -115,6 +116,7 @@ export async function processMessage(ctx: AppContext, id: string): Promise<void>
   const done = repo.getMessage(id);
   if (done?.status === 'ready') {
     await notifyNewMessage(ctx, id);
+    fireWebhooks(ctx, done.show_id, 'message.ready', messagePayload(ctx, 'message.ready', repo.getMessage(id)!));
     // After the alert, so a transcript never delays it.
     maybeTranscribe(ctx, id);
   }
