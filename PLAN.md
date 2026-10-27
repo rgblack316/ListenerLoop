@@ -6,7 +6,7 @@
 
 *Turn listener feedback into conversation.*
 
-Last updated: 2026-10-26. Tick the checkboxes below as work lands. **Status:** Phase 1 is built and tested in headless Chromium; items marked *(planned)* below are not built yet.
+Last updated: 2026-10-26. Tick the checkboxes below as work lands. **Status:** Phase 1 is built, installed on an Ubuntu server behind a Cloudflare Tunnel, and tested by several people across browsers and devices. Items marked *(planned)* below are not built yet.
 
 ## Overview and goals
 
@@ -265,7 +265,7 @@ All settings come from environment variables (a `.env` file in Docker Compose).
 - One volume for `/data` (SQLite and, with the local driver, audio); Caddy has its own volume for certificates.
 - Image runs as a non-root user; `/healthz` backs the container health check.
 - Upgrades: `scripts/update.sh` re-checks dependencies, backs up the SQLite database inside the data volume (newest 7 kept), fast-forwards the git checkout, rebuilds and restarts, and reports new settings in `.env.example`; migrations run automatically at startup. It refuses to run over local changes to tracked files and prints rollback steps if the new version is unhealthy.
-- The Dockerfile, compose files and both scripts are written. The scripts were tested against a stand-in `docker` command; the real image build and a run on a clean Ubuntu server have not been done yet (no Docker daemon was available during development). Test this first on the server.
+- The install script, Docker build and Cloudflare Tunnel setup are confirmed working on a real Ubuntu server.
 
 **systemd (alternative)**
 
@@ -291,7 +291,7 @@ Each phase is done only when its acceptance criteria pass.
 - [x] Admin login, per-show inboxes (`/shows/<slug>`), combined inbox and audio playback.
 - [x] Email alert through SMTP or Resend.
 
-**Acceptance (automated parts verified in headless Chromium with a fake microphone; real iOS Safari, Android Chrome, a live Turnstile key, S3 and email sends still to be checked by hand):** a message recorded on Chrome desktop, Android Chrome and iOS Safari through an embed on a test page appears in the inbox as a playable MP3 and triggers an email, using both storage drivers.
+**Acceptance (met: tested by several people on different browsers and devices with the live install; recordings arrive as MP3s in S3-compatible storage and email alerts reach the inbox):** a message recorded on Chrome desktop, Android Chrome and iOS Safari through an embed on a test page appears in the inbox as a playable MP3 and triggers an email, using both storage drivers.
 
 ### Phase 2: Hardening
 
@@ -300,7 +300,7 @@ Each phase is done only when its acceptance criteria pass.
 - [ ] File-upload fallback and hosted `/s/:slug` page.
 - [ ] Retry for failed processing; automatic deletion by age (retention setting). Deleting a message already removes its files.
 - [ ] Backup and restore documentation, tested once end to end.
-- [ ] In-app browser testing (Facebook, Instagram, and similar).
+- [ ] In-app browser testing (Facebook, Instagram, and similar). Regular browsers on several devices are already confirmed.
 
 **Acceptance:** scripted abuse tests (oversized file, wrong type, missing token, bad origin, rapid repeat) are all rejected; a restore from backup on a clean server succeeds.
 
@@ -338,8 +338,9 @@ Each phase is done only when its acceptance criteria pass.
 
 ## Build notes (Phase 1)
 
-- Verified: 59 automated tests, plus a headless Chromium run through the embed, recording, upload, MP3 conversion, email alert and admin playback with a fake microphone and a stand-in Turnstile script.
-- Not yet verified: real iOS Safari and Android Chrome recording, a live Turnstile key, a live S3 bucket, a live SMTP or Resend send, the Docker image build, and the install and update scripts on a real server.
+- Verified in automated tests (60) and headless Chromium: the full embed, record, upload, conversion, email and playback flow.
+- Verified on the live install: installer and Docker build on Ubuntu, Cloudflare Tunnel access, recording from several browsers and devices, MP3 storage in an S3-compatible bucket, and email alerts.
+- Not yet verified: in-app browsers (Facebook, Instagram and similar), the local storage driver on a real server, and the Resend email provider.
 - Per-show Turnstile secrets are encrypted with AES-256-GCM, keyed from `SESSION_SECRET`.
 - The slug `new` is reserved (it would clash with `/shows/new`); a show named "New" gets `new-show`.
 - Admin CLI: `create-admin`, `add-show`, `list-shows`, `set-origins`, `rotate-key` (run `node dist/cli.js` inside the container).

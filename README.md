@@ -8,7 +8,7 @@
 
 ListenerLoop is a self-hosted, open-source widget that lets listeners record a voice message from any podcast website. It replaces services like SpeakPipe. One installation serves many shows, and every message lands in a private admin inbox as an MP3.
 
-> **Status:** Phase 1 (MVP) is built and tested in headless Chromium. It has not yet been tried on real iOS Safari or Android devices, with a live Turnstile key, or against live S3 and email services. See [PLAN.md](PLAN.md) for the plan and progress checklist.
+> **Status:** Phase 1 (MVP) is built and running in production behind a Cloudflare Tunnel. Several testers have recorded from different browsers and devices; recordings reach S3-compatible storage as MP3s and email alerts arrive. In-app browsers (Facebook, Instagram) are not tested yet. See [PLAN.md](PLAN.md) for the plan and progress checklist.
 
 ## Goals
 
@@ -65,7 +65,6 @@ Paste the embed snippet from the **Shows** page into the podcast site:
 
 Sign in at `https://YOUR-APP-DOMAIN/login`. Each show has its own inbox at `/shows/<slug>` (for example `/shows/bible-bytes`), and `/inbox` combines all of them. CLI helpers: `docker compose exec app node dist/cli.js` with `create-admin`, `add-show`, `list-shows`, `set-origins`, `rotate-key`.
 
-- **Docker and scripts:** the scripts were tested against a stand-in Docker, but the real image build and a run on a clean Ubuntu server have not been tried yet, so expect to iron out small issues on the first run.
 - **Storage:** with the `s3` driver, use a private bucket and an access key made just for ListenerLoop, not your public podcast CDN. Audio is played through the app (a signed link that expires after 5 minutes), never from a public URL.
 - **Turnstile:** create one widget in Cloudflare listing only your app's hostname. Embedding sites need no key of their own.
 - **Local development:** `npm install && npm run dev` (Node 22+, ffmpeg on the PATH). Use Cloudflare's dummy Turnstile keys from `.env.example`.
