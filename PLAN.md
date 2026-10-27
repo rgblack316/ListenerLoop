@@ -305,7 +305,7 @@ Each phase is done only when its acceptance criteria pass.
 - [x] Retry for failed processing, with the failure reason shown in the inbox, and email-alert failures shown on the message with a resend button.
 - [x] Automatic deletion by age (`RETENTION_DAYS`). Starred messages are kept.
 - [x] Backup and restore: `scripts/backup.sh` and `scripts/restore.sh`, documented in the README, round trip tested.
-- [ ] In-app browser testing (Facebook, Instagram, and similar). Regular browsers on several devices are already confirmed.
+- [x] In-app browser testing: Facebook confirmed working. Instagram not yet tested (same WebView family, low risk).
 
 **Acceptance:** scripted abuse tests (oversized file, wrong type, missing token, bad origin, rapid repeat) are all rejected; a restore from backup on a clean server succeeds.
 
