@@ -73,6 +73,9 @@ button.link.danger { color: var(--danger); }
 .msg-main { flex: 1; min-width: 0; text-decoration: none; color: inherit; display: flex; flex-direction: column; }
 .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .meta { color: var(--muted); font-size: 0.9rem; }
+.meta.fail { display: block; color: var(--danger); }
+.alert p { margin: 0 0 8px; }
+.alert form { margin: 0; }
 .star { background: none; border: 0; font-size: 1.3rem; color: var(--muted); cursor: pointer; padding: 4px; }
 .star.on { color: #d99a00; }
 .row-actions { display: flex; gap: 12px; font-size: 0.9rem; }

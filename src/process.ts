@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import type { AppContext } from './context.js';
 import { buildNewMessageEmail } from './mail/index.js';
 import { assertAllowedFormat, MediaError, probe, toMp3 } from './media/convert.js';
@@ -73,6 +74,10 @@ export async function processMessage(ctx: AppContext, id: string): Promise<void>
       await storage.put(originalKey, input, 'application/octet-stream');
     }
     const { size } = await fs.promises.stat(output);
+    // A retried message may still have the original saved when it failed; drop it unless originals are kept.
+    if (msg.original_key && !originalKey) {
+      await storage.delete(msg.original_key).catch((e) => log.warn({ err: e, messageId: id }, 'could not remove the saved original'));
+    }
     repo.updateMessage(id, {
       status: 'ready',
       mp3_key: mp3Key,
@@ -103,19 +108,22 @@ export async function processMessage(ctx: AppContext, id: string): Promise<void>
   if (done?.status === 'ready') await notifyNewMessage(ctx, id);
 }
 
-export async function notifyNewMessage(ctx: AppContext, id: string): Promise<void> {
+export type AlertResult = 'sent' | 'failed' | 'skipped';
+
+/** Sends the new-message email and records whether it worked, so a failure is visible in the admin. */
+export async function notifyNewMessage(ctx: AppContext, id: string): Promise<AlertResult> {
   const { repo, mailer, config, log } = ctx;
   const msg = repo.getMessage(id);
-  if (!msg) return;
+  if (!msg) return 'skipped';
   const show = repo.getShow(msg.show_id);
   const to = show?.notify_email || repo.getAdmin()?.email;
   if (!mailer) {
     log.info({ messageId: id }, 'no mail provider configured; skipping email alert');
-    return;
+    return 'skipped';
   }
   if (!to) {
     log.info({ messageId: id }, 'no notification address; skipping email alert');
-    return;
+    return 'skipped';
   }
   try {
     await mailer.send(
@@ -128,10 +136,37 @@ export async function notifyNewMessage(ctx: AppContext, id: string): Promise<voi
         adminUrl: `${config.appUrl}/shows/${msg.show_slug}/messages/${msg.id}`,
       }),
     );
+    if (msg.email_error) repo.updateMessage(id, { email_error: null });
+    return 'sent';
   } catch (err) {
-    // An email failure never affects the submission; it is logged for the admin.
+    // An email failure never affects the submission; it is logged and shown on the message in the admin.
     log.error({ err, messageId: id }, 'email alert failed');
+    const reason = err instanceof Error ? err.message : String(err);
+    repo.updateMessage(id, { email_error: reason.replace(/\s+/g, ' ').slice(0, 300) || 'Unknown error' });
+    return 'failed';
   }
+}
+
+export type RetryResult = 'queued' | 'not_failed' | 'no_original' | 'storage_error';
+
+/** Puts a failed message back in the queue using the original recording saved when it failed. */
+export async function retryMessage(
+  ctx: AppContext,
+  m: { id: string; status: string; original_key: string | null },
+): Promise<RetryResult> {
+  if (m.status !== 'failed') return 'not_failed';
+  if (!m.original_key) return 'no_original';
+  const input = uploadPath(ctx, m.id);
+  try {
+    await pipeline(await ctx.storage.getStream(m.original_key), fs.createWriteStream(input, { flags: 'w' }));
+  } catch (err) {
+    ctx.log.error({ err, messageId: m.id }, 'could not fetch the saved original for a retry');
+    await fs.promises.rm(input, { force: true });
+    return 'storage_error';
+  }
+  ctx.repo.updateMessage(m.id, { status: 'processing', error: null });
+  ctx.queue.add(() => processMessage(ctx, m.id));
+  return 'queued';
 }
 
 /** On startup, requeue uploads that were mid-processing when the app stopped. */

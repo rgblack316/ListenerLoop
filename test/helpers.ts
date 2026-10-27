@@ -22,6 +22,8 @@ export interface Harness {
   config: Config;
   dir: string;
   sent: MailMessage[];
+  /** Set fail to true to make the next email sends throw. */
+  mail: { fail: boolean };
   close(): Promise<void>;
 }
 
@@ -41,9 +43,11 @@ export async function makeHarness(
     ...env,
   });
   const sent: MailMessage[] = [];
+  const mail = { fail: false };
   const mailer: Mailer = {
     provider: 'smtp',
     async send(m) {
+      if (mail.fail) throw new Error('Resend said: domain not verified');
       sent.push(m);
     },
   };
@@ -66,6 +70,7 @@ export async function makeHarness(
     config,
     dir,
     sent,
+    mail,
     async close() {
       await ctx.queue.idle();
       await app.close();

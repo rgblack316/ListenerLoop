@@ -9,7 +9,7 @@ import {
   type AdminSession,
 } from '../auth.js';
 import type { AppContext } from '../context.js';
-import { purgeMessage } from '../process.js';
+import { notifyNewMessage, purgeMessage, retryMessage } from '../process.js';
 import {
   INBOX_FILTERS,
   normalizeOrigin,
@@ -35,6 +35,8 @@ const FLASH: Record<string, string> = {
   saved: 'Changes saved.',
   created: 'Show created. Copy the embed code below into your site.',
   rotated: 'Site key rotated. Update the embed code on your site.',
+  retrying: 'Retrying. This usually takes a few seconds; reload to see the result.',
+  alert: 'Alert email handled. If it failed again, the reason is shown below.',
 };
 
 export function adminCsp(): string {
@@ -190,9 +192,9 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     }),
   );
 
-  const afterAction = (req: FastifyRequest, reply: FastifyReply, to: string, htmxBody: string): FastifyReply => {
+  const afterAction = (req: FastifyRequest, reply: FastifyReply, to: string, htmxBody: string, flash = 'saved'): FastifyReply => {
     if (isHtmx(req)) return reply.type('text/html; charset=utf-8').send(htmxBody);
-    return reply.redirect(`${to}?flash=saved`);
+    return reply.redirect(`${to}?flash=${flash}`);
   };
 
   app.post(
@@ -226,6 +228,31 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
       await purgeMessage(ctx, m);
       if (isHtmx(req)) return reply.type('text/html; charset=utf-8').send('');
       return reply.redirect(`/shows/${m.show_slug}`);
+    }),
+  );
+
+  app.post(
+    '/shows/:slug/messages/:id/retry',
+    mutating(async (req, reply, session) => {
+      const m = messageFor(req, session);
+      if (!m) return notFound(reply);
+      const result = await retryMessage(ctx, m);
+      if (result === 'not_failed') return reply.redirect(here(m));
+      if (result !== 'queued') {
+        const why = result === 'no_original' ? 'The original recording was not saved, so this message cannot be retried.' : 'The original recording could not be read from storage. Try again in a moment.';
+        return page(reply, `<p>${why}</p><p><a href="${here(m)}">Back to the message</a></p>`, 409);
+      }
+      return afterAction(req, reply, here(m), messageRow(repo.getMessage(m.id)!).toString(), 'retrying');
+    }),
+  );
+
+  app.post(
+    '/shows/:slug/messages/:id/resend-alert',
+    mutating(async (req, reply, session) => {
+      const m = messageFor(req, session);
+      if (!m) return notFound(reply);
+      if (m.status === 'ready') await notifyNewMessage(ctx, m.id);
+      return reply.redirect(`${here(m)}?flash=alert`);
     }),
   );
 

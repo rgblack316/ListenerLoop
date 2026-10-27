@@ -40,6 +40,8 @@ export interface Message {
   transcript: string | null;
   notes: string | null;
   error: string | null;
+  /** Why the email alert could not be sent, or null if it was sent (or none is configured). */
+  email_error: string | null;
   read_at: string | null;
   created_at: string;
   deleted_at: string | null;

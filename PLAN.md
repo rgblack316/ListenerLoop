@@ -98,7 +98,7 @@ Site owners paste one line; everything else lives on the tool's own domain.
 3. Probe with `ffprobe`: reject files with no audio stream or a container outside the allowlist (this also blocks playlist files that could make ffmpeg read local files or URLs).
 4. Run `ffmpeg` (file protocol only, with a timeout) to produce MP3: mono, 44.1 kHz, 64 kbps by default, metadata stripped, capped at the show's maximum length. The real duration is measured from the MP3, because browser WebM recordings carry no duration in their header. Loudness normalization is *(planned, Phase 3)*.
 5. Hand the MP3 (and the original, if retention is on) to the storage adapter; set status `ready`; delete temp files.
-6. Send the email notification. On failure, set status `failed`, record the reason and keep the original. Retrying from admin is *(planned, Phase 2)*; uploads interrupted by a restart are re-queued at the next startup if the file survived, otherwise marked failed.
+6. Send the email notification. On failure, set status `failed`, record the reason and keep the original. The original is kept so the message can be retried from admin; uploads interrupted by a restart are re-queued at the next startup if the file survived, otherwise marked failed.
 
 **Format notes:** Chrome and Firefox produce WebM/Opus, Safari and iOS produce MP4/AAC. The server never trusts the reported MIME type; `ffprobe` decides.
 
@@ -109,7 +109,7 @@ Five tables for v1, plus `schema_migrations`. IDs are ULIDs; timestamps are UTC.
 | Table | Key fields |
 | --- | --- |
 | `shows` | id, name, slug, site_key (public), allowed_origins (list), notify_email, max_seconds, ask_email, consent_text, button_label, accent_color, prompt_text, thanks_text, retain_original, turnstile_site_key (optional override), turnstile_secret_key (optional override, stored encrypted), created_at |
-| `messages` | id, show_id, status (`processing`, `ready`, `failed`), starred, archived, sender_name (required), sender_email (optional), consent_given, duration_seconds, mp3_key, original_key, size_bytes, original_mime, ip_hash, user_agent, transcript (nullable, unused so far), notes, error, read_at, created_at, deleted_at |
+| `messages` | id, show_id, status (`processing`, `ready`, `failed`), starred, archived, sender_name (required), sender_email (optional), consent_given, duration_seconds, mp3_key, original_key, size_bytes, original_mime, ip_hash, user_agent, transcript (nullable, unused so far), notes, error, email_error, read_at, created_at, deleted_at |
 | `admin` | id, email, password_hash (argon2id), created_at (single row in v1; becomes `users` with roles later) |
 | `sessions` | token_hash (sha256 of the cookie token), admin_id, created_at, expires_at |
 | `settings` | key, value (reserved for settings edited in admin; unused so far, settings come from environment variables) |
@@ -150,7 +150,8 @@ The admin is server-rendered, so there is no JSON admin API. Pages and form post
 | `GET /shows/:slug/messages/:id` | Message page (marks it read). |
 | `POST /shows/:slug/messages/:id/star`, `/archive`, `/delete`, `/notes` | Message actions (htmx or plain forms). |
 | `GET /shows/:slug/messages/:id/audio` | Local driver: streamed with HTTP Range. S3 driver: redirect to a signed URL that expires in 5 minutes. Add `?download=1` to download. |
-| `POST .../retry` | Re-run a failed message *(planned, Phase 2)*. |
+| `POST /shows/:slug/messages/:id/retry` | Re-run a failed message from its saved original (after fixing the cause, such as raising the show's length limit). |
+| `POST /shows/:slug/messages/:id/resend-alert` | Send the email alert again after a failure. |
 | `GET/POST /settings` | Email provider test, retention, change password *(planned)*. |
 
 A message opened under another show's URL returns 404. Public routes send CORS headers only for the show's allowed origins.
@@ -223,7 +224,7 @@ A mail adapter with two providers, chosen by `MAIL_PROVIDER`:
 - **`smtp`:** works with any provider through host, port, user and password.
 - **`resend`:** a single API key, using Resend's HTTP API.
 
-Each new message sends the show's `notify_email` (or the admin's email if none is set) a short note with the show name, duration, the sender's name (and email if shared), and a link to the admin page. Audio is not attached, which keeps the email small and the recording private. Sending is asynchronous, so an email failure never blocks or fails a submission; it is logged (showing it in admin is planned).
+Each new message sends the show's `notify_email` (or the admin's email if none is set) a short note with the show name, duration, the sender's name (and email if shared), and a link to the admin page. Audio is not attached, which keeps the email small and the recording private. Sending is asynchronous, so an email failure never blocks or fails a submission; it is logged and shown on the message in admin (an "email failed" badge, the reason, and a button to send it again).
 
 ## Configuration reference
 
@@ -298,7 +299,8 @@ Each phase is done only when its acceptance criteria pass.
 - [ ] Rate limits, origin allowlist, CSP and `frame-ancestors`: the basics are built and unit tested in Phase 1; add per-show limits, a daily cap and a scripted abuse test run.
 - [ ] Per-show widget settings with live preview in admin.
 - [ ] File-upload fallback and hosted `/s/:slug` page.
-- [ ] Retry for failed processing; automatic deletion by age (retention setting). Deleting a message already removes its files.
+- [x] Retry for failed processing, with the failure reason shown in the inbox, and email-alert failures shown on the message with a resend button.
+- [ ] Automatic deletion by age (retention setting). Deleting a message already removes its files.
 - [ ] Backup and restore documentation, tested once end to end.
 - [ ] In-app browser testing (Facebook, Instagram, and similar). Regular browsers on several devices are already confirmed.
 

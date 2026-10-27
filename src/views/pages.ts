@@ -36,10 +36,12 @@ export function messageRow(m: MessageWithShow): Raw {
     <button class="star${m.starred ? ' on' : ''}" hx-post="${msgBase(m)}/star" hx-target="#row-${m.id}" hx-swap="outerHTML"
       aria-label="${m.starred ? 'Remove star' : 'Star message'}" aria-pressed="${m.starred ? 'true' : 'false'}">${m.starred ? '★' : '☆'}</button>
     <a class="msg-main" href="${msgBase(m)}">
-      <span class="who">${m.sender_name}${unread ? html` <span class="badge new">new</span>` : ''}${m.status === 'failed' ? html` <span class="badge bad">failed</span>` : ''}${m.status === 'processing' ? html` <span class="badge">processing</span>` : ''}</span>
+      <span class="who">${m.sender_name}${unread ? html` <span class="badge new">new</span>` : ''}${m.status === 'failed' ? html` <span class="badge bad">failed</span>` : ''}${m.status === 'processing' ? html` <span class="badge">processing</span>` : ''}${m.status === 'ready' && m.email_error ? html` <span class="badge bad">email failed</span>` : ''}</span>
+      ${m.status === 'failed' ? html`<span class="meta fail">${m.error ?? 'Processing failed.'}</span>` : ''}
       <span class="meta">${m.show_name}${m.duration_seconds !== null ? ` · ${durationText(m.duration_seconds)}` : ''} · ${timeTag(m.created_at)}</span>
     </a>
     <span class="row-actions">
+      ${m.status === 'failed' && m.original_key ? html`<button class="link" hx-post="${msgBase(m)}/retry" hx-target="#row-${m.id}" hx-swap="outerHTML">Retry</button>` : ''}
       <button class="link" hx-post="${msgBase(m)}/archive" hx-target="#row-${m.id}" hx-swap="outerHTML">${m.archived ? 'Unarchive' : 'Archive'}</button>
       <button class="link danger" hx-post="${msgBase(m)}/delete" hx-target="#row-${m.id}" hx-swap="outerHTML"
         hx-confirm="Delete this message?">Delete</button>
@@ -148,8 +150,17 @@ export function messagePage(m: MessageWithShow, csrf: string, flash?: string): s
             <a href="${msgBase(m)}/audio?download=1">Download MP3</a>
           </p>`
         : m.status === 'failed'
-          ? html`<p class="alert">This message could not be processed: ${m.error ?? 'unknown error'}.</p>`
+          ? html`<div class="alert"><p>This message could not be processed: ${m.error ?? 'unknown error'}</p>
+              ${m.original_key
+                ? html`<p>The original recording was saved. If the cause was a setting (for example a length limit), change it on the show's settings page, then retry.</p>
+                  <form method="post" action="${msgBase(m)}/retry">${csrfField(csrf)}<button class="btn">Retry processing</button></form>`
+                : html`<p>The original recording was not saved, so it cannot be retried.</p>`}
+            </div>`
           : html`<p class="notice">This message is still being processed. Reload in a moment.</p>`}
+      ${m.status === 'ready' && m.email_error
+        ? html`<div class="alert"><p>The email alert for this message could not be sent: ${m.email_error}</p>
+            <form method="post" action="${msgBase(m)}/resend-alert">${csrfField(csrf)}<button class="btn">Send the alert again</button></form></div>`
+        : ''}
       <dl class="details">
         <dt>Show</dt><dd>${m.show_name}</dd>
         <dt>Received</dt><dd>${timeTag(m.created_at)}</dd>

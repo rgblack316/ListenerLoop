@@ -418,6 +418,78 @@ describe.skipIf(!ffmpeg)('admin: inbox, playback and actions', () => {
     expect(h.ctx.repo.listDeleted()).toHaveLength(0);
   });
 
+  async function submit(key: string, name: string, data: Buffer): Promise<string> {
+    const body = multipart({ key, name, consent: 'true', 'cf-turnstile-response': 'ok' }, { data });
+    const res = await h.app.inject({ method: 'POST', url: '/api/public/messages', payload: body.payload, headers: { ...body.headers, origin: APP_URL } });
+    await h.ctx.queue.idle();
+    return res.json().id as string;
+  }
+
+  it('retries a failed message from the original recording once the cause is fixed', async () => {
+    const limited = h.ctx.repo.createShow({ name: 'Limit Show', max_seconds: 5 });
+    const id = await submit(limited.site_key, 'Erin', makeAudio('webm-stream', 12));
+    const failed = h.ctx.repo.getMessage(id)!;
+    expect(failed.status).toBe('failed');
+    expect(failed.error).toContain('longer than this show allows');
+    expect(failed.original_key).toBeTruthy();
+    const url = `/shows/${limited.slug}/messages/${id}`;
+
+    const page = await get(url);
+    expect(page.body).toContain('Retry processing');
+    expect((await get(`/shows/${limited.slug}`)).body).toContain('longer than this show allows');
+
+    // Raising the limit and retrying converts the saved original.
+    h.ctx.repo.updateShow(limited.id, { max_seconds: 30 });
+    const res = await formPost(h, `${url}/retry`, session, {});
+    expect(res.statusCode).toBe(302);
+    await h.ctx.queue.idle();
+    const done = h.ctx.repo.getMessage(id)!;
+    expect(done.status).toBe('ready');
+    expect(done.error).toBeNull();
+    expect(done.mp3_key).toBeTruthy();
+    expect(done.original_key).toBeNull();
+    // The saved original is removed from storage once the retry succeeds.
+    expect(await h.ctx.storage.exists(failed.original_key!)).toBe(false);
+    expect((await get(`${url}/audio`)).statusCode).toBe(200);
+  });
+
+  it('refuses to retry what cannot be retried and requires a token', async () => {
+    const id = ids[0]!;
+    // A ready message just goes back to its page.
+    expect((await formPost(h, `${msgUrl(0)}/retry`, session, {})).statusCode).toBe(302);
+    expect(h.ctx.repo.getMessage(id)!.status).toBe('ready');
+    // A failed message with no saved original has nothing to retry from.
+    const lost = await submit(show.site_key, 'Frank', Buffer.from('not audio'));
+    h.ctx.repo.updateMessage(lost, { original_key: null });
+    const res = await formPost(h, `/shows/${show.slug}/messages/${lost}/retry`, session, {});
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toContain('cannot be retried');
+    expect(h.ctx.repo.getMessage(lost)!.status).toBe('failed');
+    const denied = await h.app.inject({ method: 'POST', url: `/shows/${show.slug}/messages/${lost}/retry`, headers: { cookie: session.cookie, origin: APP_URL } });
+    expect(denied.statusCode).toBe(403);
+  });
+
+  it('shows when the email alert failed and lets the admin send it again', async () => {
+    h.mail.fail = true;
+    const id = await submit(show.site_key, 'Grace', makeAudio('webm-stream', 2));
+    h.mail.fail = false;
+    const m = h.ctx.repo.getMessage(id)!;
+    expect(m.status).toBe('ready');
+    expect(m.email_error).toContain('domain not verified');
+    const url = `/shows/${show.slug}/messages/${id}`;
+    expect((await get(`/shows/${show.slug}`)).body).toContain('email failed');
+    const page = await get(url);
+    expect(page.body).toContain('could not be sent');
+    expect(page.body).toContain('domain not verified');
+
+    const before = h.sent.length;
+    const res = await formPost(h, `${url}/resend-alert`, session, {});
+    expect(res.statusCode).toBe(302);
+    expect(h.sent.length).toBe(before + 1);
+    expect(h.ctx.repo.getMessage(id)!.email_error).toBeNull();
+    expect((await get(url)).body).not.toContain('could not be sent');
+  });
+
   it('shows a failed message with its reason', async () => {
     const body = multipart({ key: show.site_key, name: 'Dave', consent: 'true', 'cf-turnstile-response': 'ok' }, { data: Buffer.from('not audio') });
     const res = await h.app.inject({ method: 'POST', url: '/api/public/messages', payload: body.payload, headers: { ...body.headers, origin: APP_URL } });

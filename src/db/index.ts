@@ -83,6 +83,11 @@ const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    id: 2,
+    name: 'email alert status',
+    sql: `ALTER TABLE messages ADD COLUMN email_error TEXT;`,
+  },
 ];
 
 export function migrate(db: DB): void {
