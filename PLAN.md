@@ -96,7 +96,7 @@ Site owners paste one line; everything else lives on the tool's own domain.
 1. Validate site key, origin, a non-empty sender name (up to 100 characters), a valid optional email, the consent flag, the size cap (default 15 MB), the per-IP rate limit and the Turnstile token (including its hostname).
 2. Write the upload to a temp file and create a `messages` row with status `processing`.
 3. Probe with `ffprobe` right after the Turnstile check, before the message is accepted: reject files with no audio stream or a container outside the allowlist (this also blocks playlist files that could make ffmpeg read local files or URLs) with `415`, and files with a known length over the show's limit with `400`, so the listener sees the problem straight away. Browser recordings have no length in their header, so those are measured after conversion.
-4. Run `ffmpeg` (file protocol only, with a timeout) to produce MP3: mono, 44.1 kHz, 64 kbps by default, metadata stripped, capped at the show's maximum length. The real duration is measured from the MP3, because browser WebM recordings carry no duration in their header. Loudness normalization is *(planned, Phase 3)*.
+4. Run `ffmpeg` (file protocol only, with a timeout) to produce MP3: mono, 44.1 kHz, 64 kbps by default, metadata stripped, capped at the show's maximum length. The real duration is measured from the MP3, because browser WebM recordings carry no duration in their header. Loudness normalization (EBU R128, -16 LUFS) is a per-show option, off by default, and applies to new messages. A 120-bar waveform is computed from the MP3 and stored with the message.
 5. Hand the MP3 (and the original, if retention is on) to the storage adapter; set status `ready`; delete temp files.
 6. Send the email notification. On failure, set status `failed`, record the reason and keep the original. The original is kept so the message can be retried from admin; uploads interrupted by a restart are re-queued at the next startup if the file survived, otherwise marked failed.
 
@@ -312,12 +312,12 @@ Each phase is done only when its acceptance criteria pass.
 ### Phase 3: Quality of life
 
 - [x] Search: SQLite FTS5 index over name, email, notes and transcript (migration 3), search box in every inbox, prefix and accent-insensitive matching, transcript snippets with highlights. Transcripts become searchable as soon as `messages.transcript` is written.
-- [ ] Bulk zip download (star, archive and notes shipped in Phase 1).
-- [ ] Waveform display in the player.
+- [x] Bulk zip download: tick messages in any inbox, get one .zip of MP3s, transcript .txt files and a `messages.csv` index (formula-safe). Streams one file at a time, up to 100 messages, limited to shows the signed-in user can open.
+- [x] Waveform display in the player: peaks computed at processing time (older messages are filled in at startup), click or drag to seek.
 - [x] Optional transcription: whisper.cpp built into the image, per-show toggle (migration 4), separate low-priority queue after the email alert, model downloaded on first use, retry/re-run from the message page, .txt download, searchable. A hosted-API adapter is still possible behind the same interface (`TRANSCRIPTION=...`).
-- [ ] Loudness normalization option.
+- [x] Loudness normalization option (per show, migration 5).
 
-**Acceptance:** with transcription enabled, a new message gains a searchable transcript without delaying the email alert.
+**Acceptance (met):** with transcription enabled, a new message gains a searchable transcript without delaying the email alert. Phase 3 is complete.
 
 ### Phase 4: Later
 

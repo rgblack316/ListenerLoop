@@ -118,3 +118,6 @@ mark { background: #fde68a; color: inherit; padding: 0 1px; border-radius: 2px; 
 .wave rect { fill: #9aa7b4; }
 .wave rect.played { fill: #21649E; }
 @media (prefers-color-scheme: dark) { .wave rect { fill: #5b6a78; } .wave rect.played { fill: #6db3f2; } }
+
+.bulk { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 8px; flex-wrap: wrap; }
+.msg .pick { margin: 0; flex: none; width: 18px; height: 18px; align-self: center; }

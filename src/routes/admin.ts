@@ -12,6 +12,7 @@ import {
   type AdminSession,
 } from '../auth.js';
 import type { AppContext } from '../context.js';
+import { buildZip, MAX_ZIP_MESSAGES } from '../zip.js';
 import { queueTranscription, transcriptionAvailable } from '../transcribe.js';
 import { notifyNewMessage, purgeMessage, retryMessage } from '../process.js';
 import {
@@ -50,6 +51,7 @@ const FLASH: Record<string, string> = {
   rotated: 'Site key rotated. Update the embed code on your site.',
   retrying: 'Retrying. This usually takes a few seconds; reload to see the result.',
   transcribing: 'Transcribing. This can take a few minutes; reload to see the result.',
+  nopicked: 'Tick the messages you want to download first.',
   notranscribe: 'Transcription is not switched on for this server.',
   alert: 'Alert email handled. If it failed again, the reason is shown below.',
 };
@@ -191,6 +193,36 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
   };
 
   app.get('/inbox', authed((req, reply, session) => renderInbox(req, reply, session)));
+
+  // ---------------------------------------------------------------- bulk download
+  const sendZip = (req: FastifyRequest, reply: FastifyReply, session: AdminSession, show?: Show): FastifyReply => {
+    const raw = (req.body as Body | undefined)?.ids as unknown;
+    const ids = [...new Set((Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : []).filter((v): v is string => typeof v === 'string'))];
+    const allowed = new Set((show ? [show] : accessibleShows(session)).map((s) => s.id));
+    const messages = ids
+      .slice(0, MAX_ZIP_MESSAGES)
+      .map((id) => repo.getMessage(id))
+      .filter((m): m is NonNullable<typeof m> => !!m && allowed.has(m.show_id) && m.status === 'ready' && !!m.mp3_key)
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    const back = show ? `/shows/${show.slug}` : '/inbox';
+    if (messages.length === 0) return reply.redirect(`${back}?flash=nopicked`);
+    const stamp = new Date().toISOString().slice(0, 10);
+    const name = `listenerloop-${show ? show.slug : 'messages'}-${stamp}.zip`;
+    return reply
+      .header('content-type', 'application/zip')
+      .header('content-disposition', `attachment; filename="${name}"`)
+      .header('cache-control', 'private, no-store')
+      .send(buildZip(ctx, messages));
+  };
+
+  app.post('/inbox/download', mutating((req, reply, session) => sendZip(req, reply, session)));
+  app.post(
+    '/shows/:slug/download',
+    mutating((req, reply, session) => {
+      const show = showFor(req, session);
+      return show ? sendZip(req, reply, session, show) : notFound(reply);
+    }),
+  );
 
   // ---------------------------------------------------------------- message
   /** A message, only if it belongs to the show in the URL and that show is open to this user. */

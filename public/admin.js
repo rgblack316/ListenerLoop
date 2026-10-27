@@ -60,6 +60,26 @@
     player.addEventListener('loadedmetadata', paint);
   }
 
+  // Bulk download: select all, and keep the button honest about how many are ticked.
+  var bulkButton = document.querySelector('[data-bulk-button]');
+  var pickAll = document.querySelector('[data-pick-all]');
+  var picks = function () { return Array.prototype.slice.call(document.querySelectorAll('.pick:not(:disabled)')); };
+  var refreshBulk = function () {
+    if (!bulkButton) return;
+    var n = picks().filter(function (c) { return c.checked; }).length;
+    bulkButton.disabled = n === 0;
+    bulkButton.textContent = n > 0 ? 'Download ' + n + ' selected (.zip)' : 'Download selected (.zip)';
+    if (pickAll) pickAll.checked = n > 0 && n === picks().length;
+  };
+  if (bulkButton) {
+    document.addEventListener('change', function (e) {
+      if (e.target === pickAll) picks().forEach(function (c) { c.checked = pickAll.checked; });
+      if (e.target === pickAll || (e.target.classList && e.target.classList.contains('pick'))) refreshBulk();
+    });
+    document.body.addEventListener('htmx:afterSwap', refreshBulk);
+    refreshBulk();
+  }
+
   // Confirm before destructive plain-form actions
   document.addEventListener('submit', function (e) {
     var message = e.target && e.target.getAttribute && e.target.getAttribute('data-confirm');

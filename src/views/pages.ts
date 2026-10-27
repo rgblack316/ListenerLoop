@@ -43,6 +43,7 @@ function snippetHtml(snip: string): Raw {
 export function messageRow(m: MessageWithShow, snippet?: string): Raw {
   const unread = m.status === 'ready' && !m.read_at;
   return html`<li id="row-${m.id}" class="msg${unread ? ' unread' : ''}">
+    <input type="checkbox" class="pick" form="bulk" name="ids" value="${m.id}" aria-label="Select message from ${m.sender_name}" ${m.status === 'ready' ? '' : raw('disabled')}>
     <button class="star${m.starred ? ' on' : ''}" hx-post="${msgBase(m)}/star" hx-target="#row-${m.id}" hx-swap="outerHTML"
       aria-label="${m.starred ? 'Remove star' : 'Star message'}" aria-pressed="${m.starred ? 'true' : 'false'}">${m.starred ? '★' : '☆'}</button>
     <a class="msg-main" href="${msgBase(m)}">
@@ -111,6 +112,13 @@ export function inboxPage(v: InboxView): string {
         <button type="submit">Search</button>
       </form>
     </div>
+    ${v.messages.length > 0
+      ? html`<form id="bulk" class="bulk" method="post" action="${inboxBase(v.show)}/download">
+          ${csrfField(v.csrf)}
+          <label class="check"><input type="checkbox" data-pick-all> Select all on this page</label>
+          <button class="btn" data-bulk-button>Download selected (.zip)</button>
+        </form>`
+      : ''}
     ${v.messages.length === 0
       ? html`<p class="empty">${!v.hasShows ? html`No shows yet. <a href="/shows/new">Add your first show</a> to get an embed snippet.` : v.search ? 'No messages match that search.' : 'No messages here.'}</p>`
       : html`<ul class="msgs">${v.messages.map((m) => messageRow(m, v.snippets.get(m.id)))}</ul>`}
