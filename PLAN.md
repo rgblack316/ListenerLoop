@@ -339,8 +339,8 @@ Each phase is done only when its acceptance criteria pass.
 ## Build notes (Phase 1)
 
 - Verified in automated tests (60) and headless Chromium: the full embed, record, upload, conversion, email and playback flow.
-- Verified on the live install: installer and Docker build on Ubuntu, Cloudflare Tunnel access, recording from several browsers and devices, MP3 storage in an S3-compatible bucket, and email alerts.
-- Not yet verified: in-app browsers (Facebook, Instagram and similar), the local storage driver on a real server, and the Resend email provider.
+- Verified on the live install: installer and Docker build on Ubuntu, Cloudflare Tunnel access, recording from several browsers and devices, MP3 storage in an S3-compatible bucket, and email alerts through Resend.
+- Not yet verified: in-app browsers (Facebook, Instagram and similar), the local storage driver on a real server, and the SMTP email provider.
 - Per-show Turnstile secrets are encrypted with AES-256-GCM, keyed from `SESSION_SECRET`.
 - The slug `new` is reserved (it would clash with `/shows/new`); a show named "New" gets `new-show`.
 - Admin CLI: `create-admin`, `add-show`, `list-shows`, `set-origins`, `rotate-key` (run `node dist/cli.js` inside the container).
