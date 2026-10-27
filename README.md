@@ -70,6 +70,25 @@ Sign in at `https://YOUR-APP-DOMAIN/login`. Each show has its own inbox at `/sho
 - **Local development:** `npm install && npm run dev` (Node 22+, ffmpeg on the PATH). Use Cloudflare's dummy Turnstile keys from `.env.example`.
 - **Tests:** `npm test` (needs ffmpeg).
 
+## Backup and restore
+
+```sh
+sudo ./scripts/backup.sh /var/backups/listenerloop    # default folder: ./backups
+sudo ./scripts/restore.sh /var/backups/listenerloop/listenerloop-YYYYMMDD-HHMMSS.tar.gz
+```
+
+A backup is one `.tar.gz` holding a consistent database copy, the local audio files and your `.env` (it contains secrets, so it is created readable by root only). It is safe to run while the app is running, and the newest 14 are kept (`KEEP=30` to change). With `STORAGE_DRIVER=s3` the audio is not included: turn on versioning or replication on the bucket.
+
+Run it nightly with cron (`sudo crontab -e`):
+
+```
+17 3 * * * /opt/ListenerLoop/scripts/backup.sh /var/backups/listenerloop >> /var/log/listenerloop-backup.log 2>&1
+```
+
+Then copy the folder off the server (rsync, rclone, or your provider's snapshots). A backup that lives only on the same disk is not a backup.
+
+To restore on the same server, run `restore.sh` with the archive. It asks for confirmation (or pass `--yes`), stops the app, replaces the database and audio, and starts it again. Your current `.env` is kept. On a new server: install Docker and clone the repo, then run `sudo ./scripts/restore.sh backup.tar.gz --with-env` to bring the `.env` back as well, and point DNS or the tunnel at it.
+
 ## What works today
 
 - One installation, many shows, each with its own site key, allowed sites, widget text and inbox.
@@ -77,7 +96,7 @@ Sign in at `https://YOUR-APP-DOMAIN/login`. Each show has its own inbox at `/sho
 - Upload-a-file fallback when the microphone is blocked, and a hosted recorder page for each show at `/s/<slug>` for newsletters and social bios.
 - Admin: sign in, per-show and combined inboxes, playback with speed control and download, star, archive, delete, private notes, and an email alert for each new message.
 
-**Not built yet:** search, bulk download, backup scripts, replies to listeners, multiple users. See the roadmap.
+**Not built yet:** search, bulk download, replies to listeners, multiple users. See the roadmap.
 
 ## Stack
 
@@ -96,7 +115,7 @@ Sign in at `https://YOUR-APP-DOMAIN/login`. Each show has its own inbox at `/sho
 ## Roadmap
 
 1. **MVP (built):** recorder, upload, MP3 conversion, storage drivers, admin inbox, email alert.
-2. **Hardening:** backup and restore scripts and docs, in-app browser testing.
+2. **Hardening:** in-app browser testing.
 3. **Quality of life:** search, bulk download, waveforms, optional transcription.
 4. **Later:** reply to listeners by email, multi-user admin (with per-show access), webhooks, Postgres, phone-in via Twilio.
 

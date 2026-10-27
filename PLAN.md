@@ -277,9 +277,9 @@ All settings come from environment variables (a `.env` file in Docker Compose).
 
 **Backups**
 
-- SQLite: nightly `sqlite3 .backup` copy, shipped off-box.
+- SQLite: nightly consistent copy via `scripts/backup.sh` (cron), shipped off-box by the operator.
 - Audio: with the `s3` driver, rely on bucket versioning or replication; with `local`, include `/data/audio` in the backup.
-- Backup and restore documentation is *planned* and part of the Phase 2 acceptance criteria.
+- Restore is `scripts/restore.sh` (see the README).
 
 ## Phased milestones
 
@@ -304,7 +304,7 @@ Each phase is done only when its acceptance criteria pass.
 - [x] File-upload fallback and hosted `/s/:slug` page.
 - [x] Retry for failed processing, with the failure reason shown in the inbox, and email-alert failures shown on the message with a resend button.
 - [x] Automatic deletion by age (`RETENTION_DAYS`). Starred messages are kept.
-- [ ] Backup and restore documentation, tested once end to end.
+- [x] Backup and restore: `scripts/backup.sh` and `scripts/restore.sh`, documented in the README, round trip tested.
 - [ ] In-app browser testing (Facebook, Instagram, and similar). Regular browsers on several devices are already confirmed.
 
 **Acceptance:** scripted abuse tests (oversized file, wrong type, missing token, bad origin, rapid repeat) are all rejected; a restore from backup on a clean server succeeds.
