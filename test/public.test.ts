@@ -176,26 +176,51 @@ describe.skipIf(!ffmpeg)('public API and processing pipeline', () => {
     expect(m.sender_email).toBeNull();
   });
 
-  it('marks non-audio uploads failed and keeps the original for inspection', async () => {
+  it('tells the listener at once when the file is not audio, and stores nothing', async () => {
     const res = await submit({}, { filename: 'notes.webm', type: 'audio/webm', data: Buffer.from('this is definitely not audio') });
-    expect(res.statusCode).toBe(202);
-    await h.ctx.queue.idle();
-    const m = h.ctx.repo.getMessage(res.json().id)!;
-    expect(m.status).toBe('failed');
-    expect(m.error).toBeTruthy();
-    expect(m.mp3_key).toBeNull();
-    expect(m.original_key).toBeTruthy();
-    expect(fs.existsSync(path.join(h.config.localStoragePath, m.original_key!))).toBe(true);
+    expect(res.statusCode).toBe(415);
+    expect(res.json().error).toBe('unsupported_audio');
+    expect(res.json().message).toContain('supported audio');
+    expect(h.ctx.repo.listMessages('all', { limit: 100, offset: 0 }).some((m) => m.sender_name === 'Pat Listener' && m.status === 'failed')).toBe(false);
     expect(tmpFiles()).toEqual([]);
   });
 
   it('refuses playlist files that could make ffmpeg read other files or URLs', async () => {
+    const before = h.ctx.repo.countMessages('all');
     const playlist = Buffer.from('#EXTM3U\n#EXT-X-VERSION:3\n#EXTINF:1,\n/etc/passwd\n#EXTINF:1,\nhttp://127.0.0.1:9/x\n#EXT-X-ENDLIST\n');
     const res = await submit({}, { filename: 'a.m3u8', type: 'audio/webm', data: playlist });
+    expect(res.statusCode).toBe(415);
+    expect(h.ctx.repo.countMessages('all')).toBe(before);
+    expect(tmpFiles()).toEqual([]);
+  });
+
+  it('rejects an uploaded file that is longer than the show allows before accepting it', async () => {
+    const before = h.ctx.repo.countMessages('all');
+    const res = await submit({}, { filename: 'long.m4a', type: 'audio/mp4', data: makeAudio('m4a', 12) });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('too_long');
+    expect(h.ctx.repo.countMessages('all')).toBe(before);
+    expect(tmpFiles()).toEqual([]);
+  });
+
+  it('accepts an uploaded m4a file and converts it to MP3', async () => {
+    const res = await submit({}, { filename: 'voice memo.m4a', type: 'audio/x-m4a', data: makeAudio('m4a', 2) });
+    expect(res.statusCode).toBe(202);
     await h.ctx.queue.idle();
     const m = h.ctx.repo.getMessage(res.json().id)!;
-    expect(m.status).toBe('failed');
-    expect(m.mp3_key).toBeNull();
+    expect(m.status).toBe('ready');
+    expect(probeDuration(path.join(h.config.localStoragePath, m.mp3_key!)).codec).toBe('mp3');
+  });
+
+  it('serves a hosted recorder page for each show', async () => {
+    const res = await h.app.inject({ method: 'GET', url: `/s/${show.slug}` });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('data-hosted');
+    expect(res.body).toContain(`data-key="${show.site_key}"`);
+    expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+    expect((await h.app.inject({ method: 'GET', url: '/s/no-such-show' })).statusCode).toBe(404);
+    const cfg = await h.app.inject({ method: 'GET', url: `/api/public/config?key=${show.site_key}` });
+    expect(cfg.json().show.maxUploadMb).toBe(h.config.maxUploadMb);
   });
 
   it('rejects recordings longer than the show allows', async () => {
@@ -253,14 +278,14 @@ describe.skipIf(!ffmpeg)('public API and processing pipeline', () => {
   });
 });
 
-describe('Turnstile hostname check', () => {
+describe.skipIf(!ffmpeg)('Turnstile hostname check', () => {
   it('requires the challenge to be solved on the app domain for real keys', async () => {
     let hostname = 'listenerloop.test';
     const h = await makeHarness({ TURNSTILE_SECRET_KEY: '0x4AAAAAAAreal-secret' }, async () => ({ success: true, hostname, errorCodes: [] }));
     try {
       const s = h.ctx.repo.createShow({ name: 'Host check' });
       const send = () => {
-        const body = multipart({ key: s.site_key, name: 'Lee', consent: 'true', 'cf-turnstile-response': 'tok' }, { data: Buffer.from('x') });
+        const body = multipart({ key: s.site_key, name: 'Lee', consent: 'true', 'cf-turnstile-response': 'tok' }, { data: makeAudio('webm-stream', 1) });
         return h.app.inject({ method: 'POST', url: '/api/public/messages', payload: body.payload, headers: { ...body.headers, origin: APP_URL } });
       };
       expect((await send()).statusCode).toBe(202);

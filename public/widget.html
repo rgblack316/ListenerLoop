@@ -17,21 +17,25 @@
     <div id="loading" class="note">Loading&hellip;</div>
 
     <div id="unsupported" class="note error" role="alert" hidden>
-      This browser cannot record audio here. Try opening this page in Safari, Chrome or Firefox.
+      Recording is not available in this browser. You can upload an audio file instead, or open this page in Safari, Chrome or Firefox.
     </div>
 
     <div id="content" hidden>
       <p id="prompt" class="prompt"></p>
 
       <section class="recorder" aria-label="Recorder">
-        <div class="meter" aria-hidden="true"><div id="meter-bar" class="meter-bar"></div></div>
+        <div class="meter" id="meter" aria-hidden="true"><div id="meter-bar" class="meter-bar"></div></div>
         <div class="timer" aria-live="off"><span id="timer">0:00</span> / <span id="limit">3:00</span></div>
         <div class="row">
           <button type="button" id="btn-record" class="btn primary">Start recording</button>
           <button type="button" id="btn-stop" class="btn danger" hidden>Stop</button>
-          <button type="button" id="btn-redo" class="btn" hidden>Record again</button>
+          <button type="button" id="btn-redo" class="btn" hidden>Start over</button>
         </div>
         <audio id="playback" controls hidden></audio>
+        <p class="upload" id="upload-row">
+          <button type="button" id="btn-upload" class="linkbtn">Or upload an audio file</button>
+          <input type="file" id="file" accept="audio/*,.m4a,.mp3,.wav,.webm,.ogg,.aac,.caf" hidden>
+        </p>
       </section>
 
       <form id="form" novalidate>

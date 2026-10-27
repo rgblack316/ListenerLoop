@@ -459,13 +459,15 @@ describe.skipIf(!ffmpeg)('admin: inbox, playback and actions', () => {
     expect((await formPost(h, `${msgUrl(0)}/retry`, session, {})).statusCode).toBe(302);
     expect(h.ctx.repo.getMessage(id)!.status).toBe('ready');
     // A failed message with no saved original has nothing to retry from.
-    const lost = await submit(show.site_key, 'Frank', Buffer.from('not audio'));
+    const strict = h.ctx.repo.createShow({ name: 'Strict Show', max_seconds: 5 });
+    const lost = await submit(strict.site_key, 'Frank', makeAudio('long-webm', 12));
+    expect(h.ctx.repo.getMessage(lost)!.status).toBe('failed');
     h.ctx.repo.updateMessage(lost, { original_key: null });
-    const res = await formPost(h, `/shows/${show.slug}/messages/${lost}/retry`, session, {});
+    const res = await formPost(h, `/shows/${strict.slug}/messages/${lost}/retry`, session, {});
     expect(res.statusCode).toBe(409);
     expect(res.body).toContain('cannot be retried');
     expect(h.ctx.repo.getMessage(lost)!.status).toBe('failed');
-    const denied = await h.app.inject({ method: 'POST', url: `/shows/${show.slug}/messages/${lost}/retry`, headers: { cookie: session.cookie, origin: APP_URL } });
+    const denied = await h.app.inject({ method: 'POST', url: `/shows/${strict.slug}/messages/${lost}/retry`, headers: { cookie: session.cookie, origin: APP_URL } });
     expect(denied.statusCode).toBe(403);
   });
 
@@ -491,12 +493,11 @@ describe.skipIf(!ffmpeg)('admin: inbox, playback and actions', () => {
   });
 
   it('shows a failed message with its reason', async () => {
-    const body = multipart({ key: show.site_key, name: 'Dave', consent: 'true', 'cf-turnstile-response': 'ok' }, { data: Buffer.from('not audio') });
-    const res = await h.app.inject({ method: 'POST', url: '/api/public/messages', payload: body.payload, headers: { ...body.headers, origin: APP_URL } });
-    await h.ctx.queue.idle();
-    const page = await get(`/shows/${show.slug}/messages/${res.json().id}`);
+    const short = h.ctx.repo.createShow({ name: 'Short Show', max_seconds: 5 });
+    const id = await submit(short.site_key, 'Dave', makeAudio('long-webm', 12));
+    const page = await get(`/shows/${short.slug}/messages/${id}`);
     expect(page.body).toContain('could not be processed');
     expect((await get('/inbox?filter=failed')).body).toContain('Dave');
-    expect((await get(`/shows/${show.slug}/messages/${res.json().id}/audio`)).statusCode).toBe(404);
+    expect((await get(`/shows/${short.slug}/messages/${id}/audio`)).statusCode).toBe(404);
   });
 });

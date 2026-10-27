@@ -2,7 +2,8 @@
 (function () {
   'use strict';
 
-  var key = new URLSearchParams(location.search).get('key') || '';
+  var hosted = document.documentElement.hasAttribute('data-hosted');
+  var key = new URLSearchParams(location.search).get('key') || document.documentElement.getAttribute('data-key') || '';
   var $ = function (id) { return document.getElementById(id); };
 
   var el = {
@@ -12,10 +13,11 @@
     form: $('form'), name: $('name'), email: $('email'), emailField: $('email-field'),
     consentRow: $('consent-row'), consent: $('consent'), consentText: $('consent-text'),
     send: $('btn-send'), error: $('error'), status: $('status'),
+    meter: $('meter'), btnUpload: $('btn-upload'), uploadRow: $('upload-row'), file: $('file'),
     done: $('done'), doneText: $('done-text'), close: $('close'), closeDone: $('btn-close-done'),
   };
 
-  var cfg = null;
+  var cfg = null, canRecord = true;
   var stream = null, recorder = null, chunks = [], blob = null, mime = '';
   var startedAt = 0, timerId = 0, audioCtx = null, analyser = null, raf = 0, objectUrl = '';
   var turnstileId = null, token = '', busy = false;
@@ -100,8 +102,8 @@
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     } catch (err) {
       showError(err && err.name === 'NotAllowedError'
-        ? 'Microphone access was blocked. Allow the microphone for this site, then try again.'
-        : 'No microphone could be used on this device.');
+        ? 'Microphone access was blocked. Allow the microphone for this site, then try again, or upload an audio file.'
+        : 'No microphone could be used on this device. You can upload an audio file instead.');
       return;
     }
     mime = pickMime();
@@ -109,7 +111,7 @@
       recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
     } catch (err) {
       stopStream();
-      showError('Recording is not supported in this browser.');
+      showError('Recording is not supported in this browser. You can upload an audio file instead.');
       return;
     }
     mime = recorder.mimeType || mime || 'audio/webm';
@@ -124,6 +126,7 @@
     el.btnRecord.hidden = true;
     el.btnRedo.hidden = true;
     el.btnStop.hidden = false;
+    el.uploadRow.hidden = true;
     el.playback.hidden = true;
     el.timer.textContent = '0:00';
     updateSubmit();
@@ -160,10 +163,57 @@
     if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = ''; }
     el.playback.removeAttribute('src');
     el.playback.hidden = true;
-    el.btnRecord.hidden = false;
+    el.btnRecord.hidden = !canRecord;
     el.btnRedo.hidden = true;
     el.btnStop.hidden = true;
+    el.uploadRow.hidden = false;
     el.timer.textContent = '0:00';
+    updateSubmit();
+  }
+
+  // ---- upload instead of recording ----
+  function readDuration(url) {
+    return new Promise(function (resolve) {
+      var probe = new Audio();
+      var done = function (v) { clearTimeout(timer); probe.removeAttribute('src'); resolve(v); };
+      var timer = setTimeout(function () { done(null); }, 5000);
+      probe.preload = 'metadata';
+      probe.onloadedmetadata = function () { done(isFinite(probe.duration) ? probe.duration : 0); };
+      probe.onerror = function () { done(null); };
+      probe.src = url;
+    });
+  }
+
+  async function chooseFile() {
+    var file = el.file.files && el.file.files[0];
+    el.file.value = '';
+    if (!file) return;
+    showError('');
+    var maxBytes = (cfg.maxUploadMb || 15) * 1024 * 1024;
+    if (file.size > maxBytes) { showError('That file is too large. The limit is ' + (cfg.maxUploadMb || 15) + ' MB.'); return; }
+    if (file.size === 0) { showError('That file is empty.'); return; }
+    var url = URL.createObjectURL(file);
+    var seconds = await readDuration(url);
+    if (seconds === null) {
+      URL.revokeObjectURL(url);
+      showError('That file could not be played as audio. Try an MP3, M4A, WAV or WebM file.');
+      return;
+    }
+    if (seconds > cfg.maxSeconds + 2) {
+      URL.revokeObjectURL(url);
+      showError('That recording is ' + fmt(seconds) + ' long. The limit is ' + fmt(cfg.maxSeconds) + '.');
+      return;
+    }
+    blob = file;
+    mime = file.type || '';
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    objectUrl = url;
+    el.playback.src = objectUrl;
+    el.playback.hidden = false;
+    el.btnRecord.hidden = true;
+    el.btnRedo.hidden = false;
+    el.uploadRow.hidden = true;
+    el.timer.textContent = fmt(seconds);
     updateSubmit();
   }
 
@@ -210,7 +260,7 @@
     if (cfg.askEmail && el.email.value.trim()) fd.append('email', el.email.value.trim());
     fd.append('consent', el.consent.checked ? 'true' : 'false');
     fd.append('cf-turnstile-response', token);
-    fd.append('audio', blob, 'recording.' + extFor(blob.type || mime));
+    fd.append('audio', blob, blob.name || 'recording.' + extFor(blob.type || mime));
     try {
       var res = await fetch('/api/public/messages', { method: 'POST', body: fd });
       var data = {};
@@ -268,11 +318,13 @@
     applyAccent(cfg.accentColor);
     el.loading.hidden = true;
 
-    if (!supported) {
-      el.unsupported.hidden = false;
-      return;
-    }
     el.content.hidden = false;
+    if (!supported) {
+      canRecord = false;
+      el.unsupported.hidden = false;
+      el.btnRecord.hidden = true;
+      el.meter.hidden = true;
+    }
     try {
       await loadTurnstile(data.turnstileSiteKey);
     } catch (e) {
@@ -282,14 +334,23 @@
   }
 
   el.btnRecord.addEventListener('click', startRecording);
+  el.btnUpload.addEventListener('click', function () { el.file.click(); });
+  el.file.addEventListener('change', chooseFile);
   el.btnStop.addEventListener('click', stopRecording);
-  el.btnRedo.addEventListener('click', function () { resetRecorder(); resetTurnstile(); startRecording(); });
+  el.btnRedo.addEventListener('click', function () { resetRecorder(); resetTurnstile(); });
   el.form.addEventListener('submit', submit);
   el.name.addEventListener('input', updateSubmit);
   el.consent.addEventListener('change', updateSubmit);
-  el.close.addEventListener('click', function () { post('vm:close'); });
-  el.closeDone.addEventListener('click', function () { post('vm:close'); });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') post('vm:close'); });
+  if (hosted) {
+    // On its own page there is no modal to close: hide the X and offer another message instead.
+    el.close.hidden = true;
+    el.closeDone.textContent = 'Send another message';
+    el.closeDone.addEventListener('click', function () { location.reload(); });
+  } else {
+    el.close.addEventListener('click', function () { post('vm:close'); });
+    el.closeDone.addEventListener('click', function () { post('vm:close'); });
+  }
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !hosted) post('vm:close'); });
   window.addEventListener('pagehide', function () { stopStream(); stopMeter(); });
 
   init();

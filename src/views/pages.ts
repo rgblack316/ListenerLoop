@@ -207,8 +207,10 @@ export function showsPage(shows: Show[], appUrl: string, csrf: string, flash?: s
         <label class="stack">Embed code
           <textarea readonly rows="2" data-select-on-focus>${embedSnippet(appUrl, s.site_key)}</textarea>
         </label>
+        <p class="muted">Hosted page for links in newsletters and social bios: <a href="${appUrl}/s/${s.slug}">${appUrl}/s/${s.slug}</a></p>
         <div class="actions">
           <button type="button" class="btn" data-copy="${embedSnippet(appUrl, s.site_key)}">Copy embed code</button>
+          <button type="button" class="btn" data-copy="${appUrl}/s/${s.slug}">Copy hosted page link</button>
           <form method="post" action="/shows/${s.slug}/rotate-key" data-confirm="Rotate the site key? Embeds using the old key stop working.">${csrfField(csrf)}<button class="btn" type="submit">Rotate key</button></form>
         </div>
       </section>`;

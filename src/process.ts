@@ -7,14 +7,14 @@ import { assertAllowedFormat, MediaError, probe, toMp3 } from './media/convert.j
 import { messageKey } from './storage/index.js';
 
 /** Seconds of slack over the show's limit; the widget stops recording at the limit itself. */
-const DURATION_SLACK = 2;
+export const DURATION_SLACK = 2;
 const MIN_SECONDS = 0.3;
 
 export function uploadPath(ctx: AppContext, id: string): string {
   return path.join(ctx.config.tmpDir, `${id}.upload`);
 }
 
-function userFacingError(err: unknown): string {
+export function userFacingError(err: unknown): string {
   if (err instanceof MediaError) {
     switch (err.code) {
       case 'too_long':

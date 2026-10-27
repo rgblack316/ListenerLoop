@@ -78,7 +78,7 @@ Site owners paste one line; everything else lives on the tool's own domain.
 
 **Per-show configuration** (managed in admin, fetched by site key): button label and accent color, prompt text, maximum duration, optional Turnstile key override, whether the email field is shown (always optional for the listener; the name field is always shown and required), consent text, thank-you message, and the allowed origins list.
 
-**Fallback link** *(planned, Phase 2)*: each show also gets a hosted page at `/s/<show-slug>` for newsletters, social bios and browsers where iframe microphone access is blocked.
+**Fallback link:** each show also gets a hosted page at `/s/<show-slug>`, the same recorder on its own page, for newsletters, social bios and browsers where iframe microphone access is blocked. The Shows page in admin lists each show's hosted link.
 
 ## Recording and processing pipeline
 
@@ -89,13 +89,13 @@ Site owners paste one line; everything else lives on the tool's own domain.
 3. Show a live level meter and timer; auto-stop at the configured maximum (default 3 minutes).
 4. Ask for the listener's name (required) and, optionally, an email address. Let them play back, re-record, or submit once a name is entered.
 5. Submit as `multipart/form-data` (audio blob, required name, optional email, consent flag, Turnstile token) in a single POST.
-6. *(planned, Phase 2)* If the mic is unavailable or blocked (in-app browsers, permission denied), offer a file-upload input and a link to the hosted page. Today the widget shows an explanatory message.
+6. Listeners can also upload an audio file ("Or upload an audio file"), which is the fallback when the mic is unavailable or blocked (in-app browsers, permission denied) or when recording is not supported at all. The widget checks the file's size and length before sending, and plays it back like a recording.
 
 **On the server**
 
 1. Validate site key, origin, a non-empty sender name (up to 100 characters), a valid optional email, the consent flag, the size cap (default 15 MB), the per-IP rate limit and the Turnstile token (including its hostname).
 2. Write the upload to a temp file and create a `messages` row with status `processing`.
-3. Probe with `ffprobe`: reject files with no audio stream or a container outside the allowlist (this also blocks playlist files that could make ffmpeg read local files or URLs).
+3. Probe with `ffprobe` right after the Turnstile check, before the message is accepted: reject files with no audio stream or a container outside the allowlist (this also blocks playlist files that could make ffmpeg read local files or URLs) with `415`, and files with a known length over the show's limit with `400`, so the listener sees the problem straight away. Browser recordings have no length in their header, so those are measured after conversion.
 4. Run `ffmpeg` (file protocol only, with a timeout) to produce MP3: mono, 44.1 kHz, 64 kbps by default, metadata stripped, capped at the show's maximum length. The real duration is measured from the MP3, because browser WebM recordings carry no duration in their header. Loudness normalization is *(planned, Phase 3)*.
 5. Hand the MP3 (and the original, if retention is on) to the storage adapter; set status `ready`; delete temp files.
 6. Send the email notification. On failure, set status `failed`, record the reason and keep the original. The original is kept so the message can be retried from admin; uploads interrupted by a restart are re-queued at the next startup if the file survived, otherwise marked failed.
@@ -133,7 +133,7 @@ The admin is server-rendered, so there is no JSON admin API. Pages and form post
 | `GET /api/public/config?key=` | site key + origin check | Show display settings and Turnstile site key. |
 | `POST /api/public/messages` | site key, same-origin, Turnstile | Submit a recording; returns `202` with the message id. |
 | `GET /healthz` | none | Health check for Docker and uptime monitors. |
-| `GET /s/:slug` | none | Hosted recording page for a show *(planned, Phase 2)*. |
+| `GET /s/:slug` | none | Hosted recording page for a show (the widget on its own page; cannot be framed). |
 
 **Admin (session cookie, CSRF token on every post)**
 
@@ -298,7 +298,7 @@ Each phase is done only when its acceptance criteria pass.
 
 - [ ] Rate limits, origin allowlist, CSP and `frame-ancestors`: the basics are built and unit tested in Phase 1; add per-show limits, a daily cap and a scripted abuse test run.
 - [ ] Per-show widget settings with live preview in admin.
-- [ ] File-upload fallback and hosted `/s/:slug` page.
+- [x] File-upload fallback and hosted `/s/:slug` page.
 - [x] Retry for failed processing, with the failure reason shown in the inbox, and email-alert failures shown on the message with a resend button.
 - [ ] Automatic deletion by age (retention setting). Deleting a message already removes its files.
 - [ ] Backup and restore documentation, tested once end to end.

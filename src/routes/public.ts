@@ -3,7 +3,8 @@ import { pipeline } from 'node:stream/promises';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AppContext } from '../context.js';
 import { showOrigins, type Show } from '../db/repo.js';
-import { processMessage, uploadPath } from '../process.js';
+import { assertAllowedFormat, MediaError, probe } from '../media/convert.js';
+import { DURATION_SLACK, processMessage, uploadPath, userFacingError } from '../process.js';
 import { isTestSecret } from '../turnstile.js';
 import { cleanText, decryptSecret, hashIp, isValidEmail, ulid } from '../lib/util.js';
 
@@ -60,6 +61,19 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: AppContext, stat
       .send(widgetHtml);
   });
 
+  // Hosted recorder: the same page as the embedded widget, opened on its own. For newsletters, social
+  // bios and browsers where the embed cannot get the microphone.
+  app.get('/s/:slug', (req, reply) => {
+    const show = repo.getShowBySlug((req.params as { slug: string }).slug);
+    if (!show) return reply.code(404).type('text/plain').send('Not found.');
+    const page = widgetHtml.replace('<html lang="en">', `<html lang="en" data-hosted data-key="${show.site_key}">`);
+    return reply
+      .header('Content-Security-Policy', widgetCsp([]))
+      .header('Cache-Control', 'no-cache')
+      .type('text/html; charset=utf-8')
+      .send(page);
+  });
+
   app.get('/api/public/config', (req, reply) => {
     const { key } = req.query as { key?: string };
     const show = key ? repo.getShowByKey(key) : undefined;
@@ -82,6 +96,7 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: AppContext, stat
         consentText: show.consent_text,
         maxSeconds: show.max_seconds,
         askEmail: show.ask_email === 1,
+        maxUploadMb: config.maxUploadMb,
       },
       turnstileSiteKey: turnstileKeysFor(ctx, show).siteKey,
     });
@@ -150,6 +165,23 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: AppContext, stat
     if (!result.success || !hostOk) {
       ctx.log.warn({ errorCodes: result.errorCodes, hostname: result.hostname }, 'turnstile verification failed');
       return reject(403, 'turnstile_failed', 'Verification failed. Please try again.');
+    }
+
+    // Check the file now, so a listener who picked the wrong file hears about it immediately.
+    // Browser recordings have no duration in their header, so those are measured after conversion.
+    try {
+      const info = await probe(tmp, config.ffprobePath);
+      assertAllowedFormat(info);
+      if (info.durationSeconds !== null && info.durationSeconds > show.max_seconds + DURATION_SLACK) {
+        throw new MediaError('too_long', 'Recording too long');
+      }
+    } catch (err) {
+      if (err instanceof MediaError && err.code === 'too_long') return reject(400, 'too_long', userFacingError(err));
+      if (err instanceof MediaError && err.code === 'probe_failed') {
+        ctx.log.warn({ err }, 'upload probe failed');
+        return reject(500, 'probe_failed', 'The recording could not be checked. Please try again.');
+      }
+      return reject(415, 'unsupported_audio', 'That file does not look like a supported audio recording. Try an MP3, M4A, WAV or WebM file.');
     }
 
     repo.insertMessage({
