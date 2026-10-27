@@ -1,7 +1,7 @@
 import './env.js';
 import { buildApp } from './app.js';
 import { ConfigError, loadConfig } from './config.js';
-import { purgeDeleted, purgeExpired, recoverInterrupted } from './process.js';
+import { backfillWaveforms, purgeDeleted, purgeExpired, recoverInterrupted } from './process.js';
 import { recoverTranscriptions } from './transcribe.js';
 
 async function main(): Promise<void> {
@@ -27,6 +27,8 @@ async function main(): Promise<void> {
 
   const requeuedTranscripts = recoverTranscriptions(ctx);
   if (requeuedTranscripts > 0) app.log.info({ requeued: requeuedTranscripts }, 'requeued unfinished transcriptions');
+  const drawn = backfillWaveforms(ctx);
+  if (drawn > 0) app.log.info({ drawn }, 'drawing waveforms for older messages');
   const requeued = recoverInterrupted(ctx);
   if (requeued > 0) app.log.info({ requeued }, 'requeued interrupted uploads');
 

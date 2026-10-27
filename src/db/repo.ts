@@ -18,6 +18,8 @@ export interface Show {
   retain_original: number;
   /** 1 = transcribe new messages (needs TRANSCRIPTION=whisper on the server). */
   transcribe: number;
+  /** 1 = even out the volume of new messages (EBU R128 loudness normalization) when converting. */
+  normalize_loudness: number;
   turnstile_site_key: string | null;
   turnstile_secret_key: string | null; // encrypted
   created_at: string;
@@ -44,6 +46,8 @@ export interface Message {
   transcript_status: 'pending' | 'done' | 'failed' | null;
   transcript_error: string | null;
   transcript_seconds: number | null;
+  /** JSON array of 0-100 peak heights for the player waveform; '[]' = could not be computed; null = not yet. */
+  waveform: string | null;
   notes: string | null;
   error: string | null;
   /** Why the email alert could not be sent, or null if it was sent (or none is configured). */
@@ -152,6 +156,7 @@ export class Repo {
       thanks_text: input.thanks_text ?? 'Thank you! Your message was sent.',
       retain_original: input.retain_original ?? 0,
       transcribe: input.transcribe ?? 0,
+      normalize_loudness: input.normalize_loudness ?? 0,
       turnstile_site_key: input.turnstile_site_key ?? null,
       turnstile_secret_key: input.turnstile_secret_key ?? null,
       created_at: nowIso(),
@@ -159,9 +164,9 @@ export class Repo {
     this.db
       .prepare(
         `INSERT INTO shows (id, name, slug, site_key, allowed_origins, notify_email, max_seconds, ask_email, consent_text,
-          button_label, accent_color, prompt_text, thanks_text, retain_original, transcribe, turnstile_site_key, turnstile_secret_key, created_at)
+          button_label, accent_color, prompt_text, thanks_text, retain_original, transcribe, normalize_loudness, turnstile_site_key, turnstile_secret_key, created_at)
          VALUES (@id, @name, @slug, @site_key, @allowed_origins, @notify_email, @max_seconds, @ask_email, @consent_text,
-          @button_label, @accent_color, @prompt_text, @thanks_text, @retain_original, @transcribe, @turnstile_site_key, @turnstile_secret_key, @created_at)`,
+          @button_label, @accent_color, @prompt_text, @thanks_text, @retain_original, @transcribe, @normalize_loudness, @turnstile_site_key, @turnstile_secret_key, @created_at)`,
       )
       .run(show);
     return show;
@@ -287,6 +292,11 @@ export class Repo {
 
   listProcessing(): Message[] {
     return this.db.prepare("SELECT * FROM messages WHERE status = 'processing' AND deleted_at IS NULL ORDER BY created_at").all() as Message[];
+  }
+
+  /** Ready messages that have audio but no waveform yet. */
+  listMissingWaveforms(limit: number): Message[] {
+    return this.db.prepare("SELECT * FROM messages WHERE status = 'ready' AND mp3_key IS NOT NULL AND waveform IS NULL AND deleted_at IS NULL ORDER BY created_at DESC LIMIT ?").all(limit) as Message[];
   }
 
   /** Messages whose transcription was queued but not finished (for example the app restarted). */

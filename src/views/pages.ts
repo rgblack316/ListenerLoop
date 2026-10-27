@@ -151,6 +151,19 @@ export function homePage(shows: ShowSummary[], unreadAll: number, csrf: string):
 }
 
 // ---------------------------------------------------------------- message
+/** Peak heights for the player waveform, as a data attribute the admin script draws. Empty when none. */
+function waveformHtml(stored: string | null): Raw | string {
+  let peaks: number[] = [];
+  try {
+    const parsed: unknown = JSON.parse(stored ?? '[]');
+    if (Array.isArray(parsed)) peaks = parsed.filter((n): n is number => typeof n === 'number' && Number.isFinite(n)).map((n) => Math.min(100, Math.max(0, Math.round(n)))).slice(0, 400);
+  } catch {
+    /* no waveform */
+  }
+  if (peaks.length < 2) return '';
+  return html`<div class="wave" data-wave="${peaks.join(',')}" role="img" aria-label="Waveform of the message. Click to jump to a point."></div>`;
+}
+
 export function messagePage(m: MessageWithShow, csrf: string, flash?: string, transcriptionOn = false): string {
   return layout({
     title: `Message from ${m.sender_name}`,
@@ -161,7 +174,7 @@ export function messagePage(m: MessageWithShow, csrf: string, flash?: string, tr
     ${flash ? html`<p class="notice" role="status">${flash}</p>` : ''}
     <section class="card">
       ${m.status === 'ready'
-        ? html`<audio controls preload="metadata" src="${msgBase(m)}/audio" data-player></audio>
+        ? html`${waveformHtml(m.waveform)}<audio controls preload="metadata" src="${msgBase(m)}/audio" data-player></audio>
           <p class="player-tools">
             <label>Speed
               <select data-speed>
@@ -270,6 +283,7 @@ export interface ShowFormValues {
   thanks_text: string;
   retain_original: boolean;
   transcribe: boolean;
+  normalize_loudness: boolean;
   turnstile_site_key: string;
   has_turnstile_secret: boolean;
 }
@@ -310,6 +324,8 @@ export function showFormPage(opts: {
       <label>Accent color<input type="color" name="accent_color" value="${v.accent_color}"></label>
       <label class="check"><input type="checkbox" name="ask_email" value="1" ${v.ask_email ? raw('checked') : ''}> Show the optional email field</label>
       <label class="check"><input type="checkbox" name="retain_original" value="1" ${v.retain_original ? raw('checked') : ''}> Keep the original recording next to the MP3</label>
+      <label class="check"><input type="checkbox" name="normalize_loudness" value="1" ${v.normalize_loudness ? raw('checked') : ''}> Even out the volume of new messages</label>
+      <small class="muted">Quiet and loud callers end up at a similar level. Applies to new messages only. Very noisy recordings can sound noisier.</small>
       <label class="check"><input type="checkbox" name="transcribe" value="1" ${v.transcribe ? raw('checked') : ''}> Transcribe new messages</label>
       ${opts.transcriptionOn ? '' : html`<small class="muted">Transcription is off on this server. Set TRANSCRIPTION=whisper in .env and run update.sh --restart to use it.</small>`}
       <fieldset>

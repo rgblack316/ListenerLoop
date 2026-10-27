@@ -96,6 +96,8 @@ export interface ConvertOptions {
   /** Output is cut off after this many seconds, so oversized input cannot run away. */
   maxSeconds: number;
   timeoutMs?: number;
+  /** Even out the volume (EBU R128, -16 LUFS, which suits spoken word). */
+  normalize?: boolean;
 }
 
 /** Convert any supported audio file to mono 44.1 kHz MP3 with metadata stripped. */
@@ -106,6 +108,7 @@ export async function toMp3(input: string, output: string, opts: ConvertOptions)
     '-i', input,
     '-t', String(opts.maxSeconds),
     '-vn', '-map', '0:a:0', '-map_metadata', '-1',
+    ...(opts.normalize ? ['-af', 'loudnorm=I=-16:TP=-1.5:LRA=11'] : []),
     '-ac', '1', '-ar', '44100',
     '-codec:a', 'libmp3lame', '-b:a', `${opts.bitrateKbps}k`,
     output,

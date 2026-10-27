@@ -20,6 +20,46 @@
     player.addEventListener('play', function () { player.playbackRate = Number(speed.value); });
   }
 
+  // Waveform: draw the stored peaks, show progress, and seek on click or drag.
+  var wave = document.querySelector('[data-wave]');
+  if (wave && player) {
+    var peaks = wave.getAttribute('data-wave').split(',').map(Number);
+    var NS = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + peaks.length + ' 100');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.setAttribute('aria-hidden', 'true');
+    var bars = peaks.map(function (p, i) {
+      var r = document.createElementNS(NS, 'rect');
+      r.setAttribute('x', String(i + 0.15));
+      r.setAttribute('width', '0.7');
+      r.setAttribute('y', String(50 - p / 2));
+      r.setAttribute('height', String(Math.max(p, 2)));
+      svg.appendChild(r);
+      return r;
+    });
+    wave.appendChild(svg);
+    var paint = function () {
+      var d = player.duration;
+      var upto = d && isFinite(d) ? Math.round((player.currentTime / d) * bars.length) : 0;
+      bars.forEach(function (r, i) { r.setAttribute('class', i < upto ? 'played' : ''); });
+    };
+    var seek = function (e) {
+      var d = player.duration;
+      if (!d || !isFinite(d)) return;
+      var box = wave.getBoundingClientRect();
+      player.currentTime = Math.min(1, Math.max(0, (e.clientX - box.left) / box.width)) * d;
+      paint();
+    };
+    var dragging = false;
+    wave.addEventListener('pointerdown', function (e) { dragging = true; seek(e); });
+    window.addEventListener('pointermove', function (e) { if (dragging) seek(e); });
+    window.addEventListener('pointerup', function () { dragging = false; });
+    player.addEventListener('timeupdate', paint);
+    player.addEventListener('seeked', paint);
+    player.addEventListener('loadedmetadata', paint);
+  }
+
   // Confirm before destructive plain-form actions
   document.addEventListener('submit', function (e) {
     var message = e.target && e.target.getAttribute && e.target.getAttribute('data-confirm');

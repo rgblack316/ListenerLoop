@@ -466,6 +466,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     thanks_text: 'Thank you! Your message was sent.',
     retain_original: false,
     transcribe: false,
+    normalize_loudness: false,
     turnstile_site_key: '',
     has_turnstile_secret: false,
   });
@@ -484,6 +485,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     thanks_text: s.thanks_text,
     retain_original: s.retain_original === 1,
     transcribe: s.transcribe === 1,
+    normalize_loudness: s.normalize_loudness === 1,
     turnstile_site_key: s.turnstile_site_key ?? '',
     has_turnstile_secret: !!s.turnstile_secret_key,
   });
@@ -502,6 +504,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     thanks_text: cleanText(field(body, 'thanks_text'), 300),
     retain_original: field(body, 'retain_original') === '1',
     transcribe: field(body, 'transcribe') === '1',
+    normalize_loudness: field(body, 'normalize_loudness') === '1',
     turnstile_site_key: cleanText(field(body, 'turnstile_site_key'), 100),
     has_turnstile_secret: prev.has_turnstile_secret,
   });
@@ -561,6 +564,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
         thanks_text: v.thanks_text,
         retain_original: v.retain_original ? 1 : 0,
         transcribe: v.transcribe ? 1 : 0,
+        normalize_loudness: v.normalize_loudness ? 1 : 0,
         turnstile_site_key: tsSite,
         turnstile_secret_key: tsSecret,
       },

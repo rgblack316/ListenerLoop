@@ -4,6 +4,7 @@ import { pipeline } from 'node:stream/promises';
 import type { AppContext } from './context.js';
 import { buildNewMessageEmail } from './mail/index.js';
 import { assertAllowedFormat, MediaError, probe, toMp3 } from './media/convert.js';
+import { computePeaks } from './media/waveform.js';
 import { messageKey } from './storage/index.js';
 import { maybeTranscribe } from './transcribe.js';
 
@@ -61,6 +62,7 @@ export async function processMessage(ctx: AppContext, id: string): Promise<void>
       ffmpegPath: config.ffmpegPath,
       bitrateKbps: config.mp3BitrateKbps,
       maxSeconds: show.max_seconds + DURATION_SLACK + 3,
+      normalize: show.normalize_loudness === 1,
     });
     const outInfo = await probe(output, config.ffprobePath);
     const duration = outInfo.durationSeconds ?? info.durationSeconds ?? 0;
@@ -75,6 +77,8 @@ export async function processMessage(ctx: AppContext, id: string): Promise<void>
       await storage.put(originalKey, input, 'application/octet-stream');
     }
     const { size } = await fs.promises.stat(output);
+    // A waveform is a nicety; if it cannot be drawn the message is still fine.
+    const peaks = await computePeaks(output, config.ffmpegPath).catch(() => []);
     // A retried message may still have the original saved when it failed; drop it unless originals are kept.
     if (msg.original_key && !originalKey) {
       await storage.delete(msg.original_key).catch((e) => log.warn({ err: e, messageId: id }, 'could not remove the saved original'));
@@ -85,6 +89,7 @@ export async function processMessage(ctx: AppContext, id: string): Promise<void>
       original_key: originalKey,
       duration_seconds: Math.round(duration * 10) / 10,
       size_bytes: size,
+      waveform: JSON.stringify(peaks),
       error: null,
     });
   } catch (err) {
@@ -220,4 +225,25 @@ export async function purgeExpired(ctx: AppContext): Promise<number> {
   let purged = 0;
   for (const m of ctx.repo.listExpired(cutoff)) if (await purgeMessage(ctx, m)) purged++;
   return purged;
+}
+
+/** Draw waveforms for messages that predate the feature. Quick and cheap; runs one message at a time on the main queue. */
+export function backfillWaveforms(ctx: AppContext, limit = 500): number {
+  const missing = ctx.repo.listMissingWaveforms(limit);
+  for (const m of missing) {
+    ctx.queue.add(async () => {
+      const file = path.join(ctx.config.tmpDir, `${m.id}.wf.mp3`);
+      try {
+        await pipeline(await ctx.storage.getStream(m.mp3_key!), fs.createWriteStream(file));
+        const peaks = await computePeaks(file, ctx.config.ffmpegPath);
+        ctx.repo.updateMessage(m.id, { waveform: JSON.stringify(peaks) });
+      } catch (err) {
+        ctx.log.warn({ err, messageId: m.id }, 'could not draw a waveform');
+        ctx.repo.updateMessage(m.id, { waveform: '[]' });
+      } finally {
+        await fs.promises.rm(file, { force: true });
+      }
+    });
+  }
+  return missing.length;
 }

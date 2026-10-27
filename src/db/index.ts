@@ -126,6 +126,14 @@ const MIGRATIONS: Migration[] = [
       ALTER TABLE messages ADD COLUMN transcript_seconds REAL;
     `,
   },
+  {
+    id: 5,
+    name: 'loudness and waveform',
+    sql: `
+      ALTER TABLE shows ADD COLUMN normalize_loudness INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE messages ADD COLUMN waveform TEXT;
+    `,
+  },
 ];
 
 export function migrate(db: DB): void {

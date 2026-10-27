@@ -112,3 +112,9 @@ mark { background: #fde68a; color: inherit; padding: 0 1px; border-radius: 2px; 
 @media (prefers-color-scheme: dark) { mark { background: #7a5c00; } }
 
 .transcript { white-space: pre-wrap; line-height: 1.55; margin: 0 0 8px; }
+
+.wave { display: block; width: 100%; height: 64px; margin-bottom: 8px; cursor: pointer; touch-action: none; }
+.wave svg { display: block; width: 100%; height: 100%; }
+.wave rect { fill: #9aa7b4; }
+.wave rect.played { fill: #21649E; }
+@media (prefers-color-scheme: dark) { .wave rect { fill: #5b6a78; } .wave rect.played { fill: #6db3f2; } }
