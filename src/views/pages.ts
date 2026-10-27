@@ -151,7 +151,7 @@ export function homePage(shows: ShowSummary[], unreadAll: number, csrf: string):
 }
 
 // ---------------------------------------------------------------- message
-export function messagePage(m: MessageWithShow, csrf: string, flash?: string): string {
+export function messagePage(m: MessageWithShow, csrf: string, flash?: string, transcriptionOn = false): string {
   return layout({
     title: `Message from ${m.sender_name}`,
     csrf,
@@ -196,6 +196,22 @@ export function messagePage(m: MessageWithShow, csrf: string, flash?: string): s
         <form method="post" action="${msgBase(m)}/delete" data-confirm="Delete this message?">${csrfField(csrf)}<button class="btn danger">Delete</button></form>
       </div>
     </section>
+    ${m.status === 'ready' && (transcriptionOn || m.transcript_status)
+      ? html`<section class="card">
+      <h2>Transcript</h2>
+      ${m.transcript_status === 'done'
+        ? html`${m.transcript ? html`<p class="transcript">${m.transcript}</p>` : html`<p class="muted">No speech was detected.</p>`}
+          <p class="player-tools"><a href="${msgBase(m)}/transcript.txt">Download .txt</a>${m.transcript_seconds !== null ? html` <span class="muted">&middot; transcribed in ${durationText(m.transcript_seconds)}</span>` : ''}</p>`
+        : m.transcript_status === 'pending'
+          ? html`<p class="notice">Transcribing&hellip; this can take a few minutes. Reload to check.</p>`
+          : m.transcript_status === 'failed'
+            ? html`<div class="alert"><p>The transcript could not be made: ${m.transcript_error ?? 'unknown error'}</p></div>`
+            : html`<p class="muted">Not transcribed.</p>`}
+      ${transcriptionOn && m.transcript_status !== 'pending'
+        ? html`<form method="post" action="${msgBase(m)}/transcribe">${csrfField(csrf)}<button class="btn">${m.transcript_status === 'done' ? 'Transcribe again' : m.transcript_status === 'failed' ? 'Try again' : 'Transcribe this message'}</button></form>`
+        : ''}
+    </section>`
+      : ''}
     <section class="card">
       <h2>Private notes</h2>
       <form method="post" action="${msgBase(m)}/notes" class="stack">
@@ -253,6 +269,7 @@ export interface ShowFormValues {
   prompt_text: string;
   thanks_text: string;
   retain_original: boolean;
+  transcribe: boolean;
   turnstile_site_key: string;
   has_turnstile_secret: boolean;
 }
@@ -263,6 +280,8 @@ export function showFormPage(opts: {
   values: ShowFormValues;
   errors: string[];
   maxSecondsLimit: number;
+  /** Whether the server has transcription switched on (TRANSCRIPTION=whisper). */
+  transcriptionOn: boolean;
 }): string {
   const { values: v, show } = opts;
   return layout({
@@ -291,6 +310,8 @@ export function showFormPage(opts: {
       <label>Accent color<input type="color" name="accent_color" value="${v.accent_color}"></label>
       <label class="check"><input type="checkbox" name="ask_email" value="1" ${v.ask_email ? raw('checked') : ''}> Show the optional email field</label>
       <label class="check"><input type="checkbox" name="retain_original" value="1" ${v.retain_original ? raw('checked') : ''}> Keep the original recording next to the MP3</label>
+      <label class="check"><input type="checkbox" name="transcribe" value="1" ${v.transcribe ? raw('checked') : ''}> Transcribe new messages</label>
+      ${opts.transcriptionOn ? '' : html`<small class="muted">Transcription is off on this server. Set TRANSCRIPTION=whisper in .env and run update.sh --restart to use it.</small>`}
       <fieldset>
         <legend>Turnstile override (optional)</legend>
         <p class="muted">Leave these empty to use the app-wide Turnstile key. If you set your own, it must allow this app's domain.</p>

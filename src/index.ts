@@ -2,6 +2,7 @@ import './env.js';
 import { buildApp } from './app.js';
 import { ConfigError, loadConfig } from './config.js';
 import { purgeDeleted, purgeExpired, recoverInterrupted } from './process.js';
+import { recoverTranscriptions } from './transcribe.js';
 
 async function main(): Promise<void> {
   let config;
@@ -24,6 +25,8 @@ async function main(): Promise<void> {
     app.log.warn('No admin account yet. Create one with: node dist/cli.js create-admin you@example.com');
   }
 
+  const requeuedTranscripts = recoverTranscriptions(ctx);
+  if (requeuedTranscripts > 0) app.log.info({ requeued: requeuedTranscripts }, 'requeued unfinished transcriptions');
   const requeued = recoverInterrupted(ctx);
   if (requeued > 0) app.log.info({ requeued }, 'requeued interrupted uploads');
 
@@ -51,7 +54,7 @@ async function main(): Promise<void> {
     clearInterval(sweep);
     await app.close();
     // Let an in-flight conversion finish, but do not hang forever.
-    await Promise.race([ctx.queue.idle(), new Promise((r) => setTimeout(r, 30_000))]);
+    await Promise.race([Promise.all([ctx.queue.idle(), ctx.transcribeQueue.idle()]), new Promise((r) => setTimeout(r, 30_000))]);
     ctx.repo.db.close();
     process.exit(0);
   };

@@ -24,13 +24,13 @@ const ALLOWED_FORMATS = new Set([
   'matroska', 'webm', 'ogg', 'mov', 'mp4', 'm4a', '3gp', '3g2', 'mj2', 'mp3', 'wav', 'flac', 'aac', 'aiff', 'caf', 'amr',
 ]);
 
-interface RunResult {
+export interface RunResult {
   stdout: string;
   stderr: string;
   code: number | null;
 }
 
-function run(cmd: string, args: string[], timeoutMs: number): Promise<RunResult> {
+export function run(cmd: string, args: string[], timeoutMs: number): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
@@ -109,6 +109,22 @@ export async function toMp3(input: string, output: string, opts: ConvertOptions)
     '-ac', '1', '-ar', '44100',
     '-codec:a', 'libmp3lame', '-b:a', `${opts.bitrateKbps}k`,
     output,
+  ];
+  let res: RunResult;
+  try {
+    res = await run(opts.ffmpegPath ?? 'ffmpeg', args, opts.timeoutMs ?? 120_000);
+  } catch (err) {
+    throw new MediaError('convert_failed', (err as Error).message);
+  }
+  if (res.code !== 0) throw new MediaError('convert_failed', res.stderr.trim().slice(0, 500) || 'ffmpeg failed');
+}
+
+/** Convert any supported audio file to 16 kHz mono WAV, the input format whisper.cpp expects. */
+export async function toWav16k(input: string, output: string, opts: { ffmpegPath?: string; timeoutMs?: number } = {}): Promise<void> {
+  const args = [
+    '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
+    '-protocol_whitelist', 'file',
+    '-i', input, '-vn', '-map', '0:a:0', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', output,
   ];
   let res: RunResult;
   try {

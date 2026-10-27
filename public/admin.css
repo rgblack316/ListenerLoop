@@ -110,3 +110,5 @@ textarea[readonly] { font-family: ui-monospace, SFMono-Regular, Menlo, monospace
 .snippet { display: block; margin-top: 2px; font-size: 0.9em; }
 mark { background: #fde68a; color: inherit; padding: 0 1px; border-radius: 2px; }
 @media (prefers-color-scheme: dark) { mark { background: #7a5c00; } }
+
+.transcript { white-space: pre-wrap; line-height: 1.55; margin: 0 0 8px; }

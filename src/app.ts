@@ -47,6 +47,7 @@ export async function buildApp(opts: BuildOptions): Promise<{ app: FastifyInstan
     storage: opts.storage ?? createStorage(config),
     mailer: opts.mailer === undefined ? createMailer(config) : opts.mailer,
     queue: new JobQueue(1, (err) => app.log.error({ err }, 'background job failed')),
+    transcribeQueue: new JobQueue(1, (err) => app.log.error({ err }, 'transcription job failed')),
     verifyTurnstile: opts.verifyTurnstile ?? verifyWithCloudflare,
     log: app.log,
   };

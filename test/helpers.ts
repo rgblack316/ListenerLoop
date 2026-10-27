@@ -73,6 +73,7 @@ export async function makeHarness(
     mail,
     async close() {
       await ctx.queue.idle();
+      await ctx.transcribeQueue.idle();
       await app.close();
       ctx.repo.db.close();
       fs.rmSync(dir, { recursive: true, force: true });

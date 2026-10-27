@@ -12,6 +12,7 @@ import {
   type AdminSession,
 } from '../auth.js';
 import type { AppContext } from '../context.js';
+import { queueTranscription, transcriptionAvailable } from '../transcribe.js';
 import { notifyNewMessage, purgeMessage, retryMessage } from '../process.js';
 import {
   INBOX_FILTERS,
@@ -48,6 +49,8 @@ const FLASH: Record<string, string> = {
   created: 'Show created. Copy the embed code below into your site.',
   rotated: 'Site key rotated. Update the embed code on your site.',
   retrying: 'Retrying. This usually takes a few seconds; reload to see the result.',
+  transcribing: 'Transcribing. This can take a few minutes; reload to see the result.',
+  notranscribe: 'Transcription is not switched on for this server.',
   alert: 'Alert email handled. If it failed again, the reason is shown below.',
 };
 
@@ -205,7 +208,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
       if (!m) return notFound(reply);
       if (m.status === 'ready' && !m.read_at) repo.updateMessage(m.id, { read_at: new Date().toISOString() });
       const flash = FLASH[(req.query as { flash?: string }).flash ?? ''];
-      return page(reply, messagePage(m, session.csrf, flash));
+      return page(reply, messagePage(m, session.csrf, flash, transcriptionAvailable(ctx)));
     }),
   );
 
@@ -270,6 +273,31 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
       if (!m) return notFound(reply);
       if (m.status === 'ready') await notifyNewMessage(ctx, m.id);
       return reply.redirect(`${here(m)}?flash=alert`);
+    }),
+  );
+
+  app.post(
+    '/shows/:slug/messages/:id/transcribe',
+    mutating((req, reply, session) => {
+      const m = messageFor(req, session);
+      if (!m) return notFound(reply);
+      if (m.transcript_status === 'pending') return reply.redirect(`${here(m)}?flash=transcribing`);
+      const queued = queueTranscription(ctx, m.id);
+      return reply.redirect(`${here(m)}?flash=${queued ? 'transcribing' : 'notranscribe'}`);
+    }),
+  );
+
+  app.get(
+    '/shows/:slug/messages/:id/transcript.txt',
+    authed((req, reply, session) => {
+      const m = messageFor(req, session);
+      if (!m || m.transcript_status !== 'done') return notFound(reply);
+      const name = `${m.show_slug}-${m.created_at.slice(0, 10)}-${m.sender_name.replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '').slice(0, 40) || 'message'}.txt`;
+      return reply
+        .header('content-type', 'text/plain; charset=utf-8')
+        .header('content-disposition', `attachment; filename="${name.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`)
+        .header('cache-control', 'private, no-store')
+        .send(`${m.sender_name} - ${m.show_name} - ${m.created_at}\n\n${m.transcript ?? ''}\n`);
     }),
   );
 
@@ -437,6 +465,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     prompt_text: 'Record a message for the show.',
     thanks_text: 'Thank you! Your message was sent.',
     retain_original: false,
+    transcribe: false,
     turnstile_site_key: '',
     has_turnstile_secret: false,
   });
@@ -454,6 +483,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     prompt_text: s.prompt_text,
     thanks_text: s.thanks_text,
     retain_original: s.retain_original === 1,
+    transcribe: s.transcribe === 1,
     turnstile_site_key: s.turnstile_site_key ?? '',
     has_turnstile_secret: !!s.turnstile_secret_key,
   });
@@ -471,6 +501,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     prompt_text: cleanText(field(body, 'prompt_text'), 300),
     thanks_text: cleanText(field(body, 'thanks_text'), 300),
     retain_original: field(body, 'retain_original') === '1',
+    transcribe: field(body, 'transcribe') === '1',
     turnstile_site_key: cleanText(field(body, 'turnstile_site_key'), 100),
     has_turnstile_secret: prev.has_turnstile_secret,
   });
@@ -529,6 +560,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
         prompt_text: v.prompt_text,
         thanks_text: v.thanks_text,
         retain_original: v.retain_original ? 1 : 0,
+        transcribe: v.transcribe ? 1 : 0,
         turnstile_site_key: tsSite,
         turnstile_secret_key: tsSecret,
       },
@@ -546,7 +578,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
   app.get(
     '/shows/new',
     authed((_req, reply, session) =>
-      page(reply, showFormPage({ csrf: session.csrf, show: null, values: blankValues(), errors: [], maxSecondsLimit: MAX_SECONDS_LIMIT })),
+      page(reply, showFormPage({ csrf: session.csrf, show: null, values: blankValues(), errors: [], maxSecondsLimit: MAX_SECONDS_LIMIT, transcriptionOn: transcriptionAvailable(ctx) })),
     ),
   );
 
@@ -556,7 +588,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
       const values = valuesFromBody(req.body, blankValues());
       const { errors, fields } = parseShowForm(req.body, values, null);
       if (errors.length) {
-        return page(reply, showFormPage({ csrf: session.csrf, show: null, values, errors, maxSecondsLimit: MAX_SECONDS_LIMIT }), 400);
+        return page(reply, showFormPage({ csrf: session.csrf, show: null, values, errors, maxSecondsLimit: MAX_SECONDS_LIMIT, transcriptionOn: transcriptionAvailable(ctx) }), 400);
       }
       repo.createShow({ ...(fields as Omit<typeof fields, 'name'>), name: values.name });
       return reply.redirect('/shows?flash=created');
@@ -576,7 +608,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     authed((req, reply, session) => {
       const show = showFor(req, session);
       if (!show) return notFound(reply);
-      return page(reply, showFormPage({ csrf: session.csrf, show, values: valuesFromShow(show), errors: [], maxSecondsLimit: MAX_SECONDS_LIMIT }));
+      return page(reply, showFormPage({ csrf: session.csrf, show, values: valuesFromShow(show), errors: [], maxSecondsLimit: MAX_SECONDS_LIMIT, transcriptionOn: transcriptionAvailable(ctx) }));
     }),
   );
 
@@ -588,7 +620,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
       const values = valuesFromBody(req.body, valuesFromShow(show));
       const { errors, fields } = parseShowForm(req.body, values, show);
       if (errors.length) {
-        return page(reply, showFormPage({ csrf: session.csrf, show, values, errors, maxSecondsLimit: MAX_SECONDS_LIMIT }), 400);
+        return page(reply, showFormPage({ csrf: session.csrf, show, values, errors, maxSecondsLimit: MAX_SECONDS_LIMIT, transcriptionOn: transcriptionAvailable(ctx) }), 400);
       }
       repo.updateShow(show.id, fields);
       return reply.redirect('/shows?flash=saved');

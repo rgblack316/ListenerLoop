@@ -5,6 +5,7 @@ import type { AppContext } from './context.js';
 import { buildNewMessageEmail } from './mail/index.js';
 import { assertAllowedFormat, MediaError, probe, toMp3 } from './media/convert.js';
 import { messageKey } from './storage/index.js';
+import { maybeTranscribe } from './transcribe.js';
 
 /** Seconds of slack over the show's limit; the widget stops recording at the limit itself. */
 export const DURATION_SLACK = 2;
@@ -105,7 +106,11 @@ export async function processMessage(ctx: AppContext, id: string): Promise<void>
   }
 
   const done = repo.getMessage(id);
-  if (done?.status === 'ready') await notifyNewMessage(ctx, id);
+  if (done?.status === 'ready') {
+    await notifyNewMessage(ctx, id);
+    // After the alert, so a transcript never delays it.
+    maybeTranscribe(ctx, id);
+  }
 }
 
 export type AlertResult = 'sent' | 'failed' | 'skipped';

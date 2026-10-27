@@ -70,6 +70,23 @@ Sign in at `https://YOUR-APP-DOMAIN/login`. Each show has its own inbox at `/sho
 - **Local development:** `npm install && npm run dev` (Node 22+, ffmpeg on the PATH). Use Cloudflare's dummy Turnstile keys from `.env.example`.
 - **Tests:** `npm test` (needs ffmpeg).
 
+## Transcription (optional)
+
+ListenerLoop can turn each voicemail into text on your own server with [whisper.cpp](https://github.com/ggml-org/whisper.cpp). Audio never leaves the machine, and nothing is sent to a third party.
+
+1. Add to `.env`:
+   ```
+   TRANSCRIPTION=whisper
+   WHISPER_MODEL=small.en
+   WHISPER_THREADS=2
+   ```
+2. Run `sudo ./scripts/update.sh --restart` (the first build compiles whisper.cpp, which takes a few minutes).
+3. Open a show's settings and tick **Transcribe new messages**. The model downloads once, on first use, into the data volume.
+
+Transcripts appear on the message page (with a .txt download and a "Transcribe again" button), and are searched by the inbox search box. They run after the email alert, one at a time, at low priority, so they never delay an alert or a new upload. Old messages can be transcribed one by one from their page.
+
+Choosing a model: `base.en` is about real time on 2 CPU cores and fine for clear speech. `small.en` is more accurate but roughly 3 to 5 times slower than real time on 2 cores, and needs about 1 GB of free RAM. The time each transcript took is shown on the message page, so you can judge. Drop the `.en` for other languages (`small`). Transcripts are stored in the database (and so in backups), not in object storage, and are deleted with their message.
+
 ## Backup and restore
 
 ```sh
@@ -94,9 +111,9 @@ To restore on the same server, run `restore.sh` with the archive. It asks for co
 - One installation, many shows, each with its own site key, allowed sites, widget text and inbox.
 - Embed button, recorder modal (name required, email optional, consent notice), Turnstile, MP3 conversion, local or S3 storage.
 - Upload-a-file fallback when the microphone is blocked, and a hosted recorder page for each show at `/s/<slug>` for newsletters and social bios.
-- Admin: sign in, per-show and combined inboxes, playback with speed control and download, star, archive, delete, private notes, search (name, email, notes, and transcripts once added), and an email alert for each new message.
+- Admin: sign in, per-show and combined inboxes, playback with speed control and download, star, archive, delete, private notes, search (name, email, notes, transcripts), optional on-server transcription, and an email alert for each new message.
 
-**Not built yet:** bulk download, transcription, replies to listeners, multiple users. See the roadmap.
+**Not built yet:** bulk download, replies to listeners, multiple users. See the roadmap.
 
 ## Stack
 

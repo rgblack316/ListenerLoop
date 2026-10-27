@@ -13,6 +13,8 @@ export interface AppContext {
   storage: StorageDriver;
   mailer: Mailer | null;
   queue: JobQueue;
+  /** Transcription runs apart from conversion so a long transcript never delays a new upload. */
+  transcribeQueue: JobQueue;
   verifyTurnstile: TurnstileVerifier;
   log: FastifyBaseLogger;
 }

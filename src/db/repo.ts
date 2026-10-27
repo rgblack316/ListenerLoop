@@ -16,6 +16,8 @@ export interface Show {
   prompt_text: string;
   thanks_text: string;
   retain_original: number;
+  /** 1 = transcribe new messages (needs TRANSCRIPTION=whisper on the server). */
+  transcribe: number;
   turnstile_site_key: string | null;
   turnstile_secret_key: string | null; // encrypted
   created_at: string;
@@ -38,6 +40,10 @@ export interface Message {
   ip_hash: string | null;
   user_agent: string | null;
   transcript: string | null;
+  /** null = never queued, pending = waiting or running, done, failed */
+  transcript_status: 'pending' | 'done' | 'failed' | null;
+  transcript_error: string | null;
+  transcript_seconds: number | null;
   notes: string | null;
   error: string | null;
   /** Why the email alert could not be sent, or null if it was sent (or none is configured). */
@@ -145,6 +151,7 @@ export class Repo {
       prompt_text: input.prompt_text ?? 'Record a message for the show.',
       thanks_text: input.thanks_text ?? 'Thank you! Your message was sent.',
       retain_original: input.retain_original ?? 0,
+      transcribe: input.transcribe ?? 0,
       turnstile_site_key: input.turnstile_site_key ?? null,
       turnstile_secret_key: input.turnstile_secret_key ?? null,
       created_at: nowIso(),
@@ -152,9 +159,9 @@ export class Repo {
     this.db
       .prepare(
         `INSERT INTO shows (id, name, slug, site_key, allowed_origins, notify_email, max_seconds, ask_email, consent_text,
-          button_label, accent_color, prompt_text, thanks_text, retain_original, turnstile_site_key, turnstile_secret_key, created_at)
+          button_label, accent_color, prompt_text, thanks_text, retain_original, transcribe, turnstile_site_key, turnstile_secret_key, created_at)
          VALUES (@id, @name, @slug, @site_key, @allowed_origins, @notify_email, @max_seconds, @ask_email, @consent_text,
-          @button_label, @accent_color, @prompt_text, @thanks_text, @retain_original, @turnstile_site_key, @turnstile_secret_key, @created_at)`,
+          @button_label, @accent_color, @prompt_text, @thanks_text, @retain_original, @transcribe, @turnstile_site_key, @turnstile_secret_key, @created_at)`,
       )
       .run(show);
     return show;
@@ -280,6 +287,11 @@ export class Repo {
 
   listProcessing(): Message[] {
     return this.db.prepare("SELECT * FROM messages WHERE status = 'processing' AND deleted_at IS NULL ORDER BY created_at").all() as Message[];
+  }
+
+  /** Messages whose transcription was queued but not finished (for example the app restarted). */
+  listPendingTranscripts(): Message[] {
+    return this.db.prepare("SELECT * FROM messages WHERE transcript_status = 'pending' AND status = 'ready' AND deleted_at IS NULL ORDER BY created_at").all() as Message[];
   }
 
   /** Messages the admin deleted whose audio and record have not been removed yet. */

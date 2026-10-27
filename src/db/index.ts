@@ -116,6 +116,16 @@ const MIGRATIONS: Migration[] = [
       END;
     `,
   },
+  {
+    id: 4,
+    name: 'transcription',
+    sql: `
+      ALTER TABLE shows ADD COLUMN transcribe INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE messages ADD COLUMN transcript_status TEXT;
+      ALTER TABLE messages ADD COLUMN transcript_error TEXT;
+      ALTER TABLE messages ADD COLUMN transcript_seconds REAL;
+    `,
+  },
 ];
 
 export function migrate(db: DB): void {

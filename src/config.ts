@@ -47,6 +47,15 @@ export interface Config {
   retentionDays: number;
   ffmpegPath: string;
   ffprobePath: string;
+  /** 'whisper' turns on local transcription (still opt-in per show); 'off' disables it everywhere. */
+  transcription: 'off' | 'whisper';
+  whisperBin: string;
+  whisperModel: string;
+  whisperModelDir: string;
+  whisperThreads: number;
+  /** 'en' for English-only (.en) models, otherwise automatic detection unless WHISPER_LANGUAGE is set. */
+  whisperLanguage: string;
+  transcribeTimeoutSec: number;
 }
 
 type Env = Record<string, string | undefined>;
@@ -99,6 +108,11 @@ export function loadConfig(env: Env = process.env): Config {
   const databasePath = path.resolve(str('DATABASE_PATH', path.join(dataDir, 'app.db')));
   const localStoragePath = path.resolve(str('LOCAL_STORAGE_PATH', path.join(dataDir, 'audio')));
 
+  const transcriptionRaw = str('TRANSCRIPTION', 'off').toLowerCase();
+  if (transcriptionRaw !== 'off' && transcriptionRaw !== 'whisper') problems.push(`TRANSCRIPTION must be "off" or "whisper" (got "${transcriptionRaw}")`);
+  const transcriptionMode = transcriptionRaw === 'whisper' ? 'whisper' : 'off';
+  const whisperModel = str('WHISPER_MODEL', 'small.en');
+  if (!/^[a-z0-9][a-z0-9._-]*$/.test(whisperModel)) problems.push(`WHISPER_MODEL "${whisperModel}" is not a valid model name (for example base.en or small.en)`);
   const driver = str('STORAGE_DRIVER', 'local');
   if (driver !== 'local' && driver !== 's3') problems.push(`STORAGE_DRIVER must be "local" or "s3" (got "${driver}")`);
   const s3 = {
@@ -167,6 +181,13 @@ export function loadConfig(env: Env = process.env): Config {
     retentionDays: int('RETENTION_DAYS', 0, 0),
     ffmpegPath: str('FFMPEG_PATH', 'ffmpeg'),
     ffprobePath: str('FFPROBE_PATH', 'ffprobe'),
+    transcription: transcriptionMode,
+    whisperBin: str('WHISPER_BIN', 'whisper-cli'),
+    whisperModel,
+    whisperModelDir: path.resolve(str('WHISPER_MODEL_DIR', path.join(dataDir, 'models'))),
+    whisperThreads: int('WHISPER_THREADS', 2, 1),
+    whisperLanguage: str('WHISPER_LANGUAGE', whisperModel.endsWith('.en') ? 'en' : 'auto'),
+    transcribeTimeoutSec: int('TRANSCRIBE_TIMEOUT_SEC', 1800, 30),
   };
 
   if (problems.length > 0) throw new ConfigError(problems);

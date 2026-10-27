@@ -314,7 +314,7 @@ Each phase is done only when its acceptance criteria pass.
 - [x] Search: SQLite FTS5 index over name, email, notes and transcript (migration 3), search box in every inbox, prefix and accent-insensitive matching, transcript snippets with highlights. Transcripts become searchable as soon as `messages.transcript` is written.
 - [ ] Bulk zip download (star, archive and notes shipped in Phase 1).
 - [ ] Waveform display in the player.
-- [ ] Optional transcription adapter (whisper.cpp or API), with transcript search.
+- [x] Optional transcription: whisper.cpp built into the image, per-show toggle (migration 4), separate low-priority queue after the email alert, model downloaded on first use, retry/re-run from the message page, .txt download, searchable. A hosted-API adapter is still possible behind the same interface (`TRANSCRIPTION=...`).
 - [ ] Loudness normalization option.
 
 **Acceptance:** with transcription enabled, a new message gains a searchable transcript without delaying the email alert.
