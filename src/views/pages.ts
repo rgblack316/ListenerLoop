@@ -250,7 +250,8 @@ export function showFormPage(opts: {
     body: html`<p><a href="/shows">&larr; Back to shows</a></p>
     <h1>${show ? `Edit ${show.name}` : 'Add show'}</h1>
     ${opts.errors.length ? html`<div class="alert" role="alert"><ul>${opts.errors.map((e) => html`<li>${e}</li>`)}</ul></div>` : ''}
-    <form method="post" action="${show ? `/shows/${show.slug}/settings` : '/shows'}" class="card stack">
+    <div class="show-layout">
+    <form method="post" action="${show ? `/shows/${show.slug}/settings` : '/shows'}" class="card stack" data-preview>
       ${csrfField(opts.csrf)}
       <label>Show name<input name="name" value="${v.name}" required maxlength="100"></label>
       ${show ? html`<label>URL slug<input name="slug" value="${v.slug}" required maxlength="48" pattern="[a-z0-9]+(-[a-z0-9]+)*"></label>` : ''}
@@ -276,7 +277,13 @@ export function showFormPage(opts: {
         ${v.has_turnstile_secret ? html`<label class="check"><input type="checkbox" name="clear_turnstile" value="1"> Remove the override and use the app-wide key</label>` : ''}
       </fieldset>
       <button class="btn primary" type="submit">${show ? 'Save changes' : 'Create show'}</button>
-    </form>`,
+    </form>
+    <aside class="preview" aria-label="Preview">
+      <h2>Preview</h2>
+      <iframe id="preview-frame" src="/static/preview.html" title="Widget preview" loading="lazy"></iframe>
+      <p class="muted">Updates as you type. The recorder itself works on your site.</p>
+    </aside>
+    </div>`,
   });
 }
 

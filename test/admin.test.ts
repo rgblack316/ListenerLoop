@@ -188,6 +188,10 @@ describe('admin: shows', () => {
     expect(saved.turnstile_secret_key).not.toContain('SUPER-SECRET');
 
     const form = await h.app.inject({ method: 'GET', url: `/shows/${show.slug}/settings`, headers: { cookie: session.cookie } });
+    expect(form.body).toContain('data-preview');
+    expect(form.body).toContain('src="/static/preview.html"');
+    expect(form.headers['content-security-policy']).toContain("frame-src 'self'");
+    expect((await h.app.inject({ method: 'GET', url: '/static/preview.html' })).statusCode).toBe(200);
     expect(form.body).not.toContain('SUPER-SECRET');
     expect(form.body).toContain('Leave blank to keep it');
 

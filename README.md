@@ -77,7 +77,7 @@ Sign in at `https://YOUR-APP-DOMAIN/login`. Each show has its own inbox at `/sho
 - Upload-a-file fallback when the microphone is blocked, and a hosted recorder page for each show at `/s/<slug>` for newsletters and social bios.
 - Admin: sign in, per-show and combined inboxes, playback with speed control and download, star, archive, delete, private notes, and an email alert for each new message.
 
-**Not built yet:** search, bulk download, widget live preview, backup scripts, replies to listeners, multiple users. See the roadmap.
+**Not built yet:** search, bulk download, backup scripts, replies to listeners, multiple users. See the roadmap.
 
 ## Stack
 
@@ -96,7 +96,7 @@ Sign in at `https://YOUR-APP-DOMAIN/login`. Each show has its own inbox at `/sho
 ## Roadmap
 
 1. **MVP (built):** recorder, upload, MP3 conversion, storage drivers, admin inbox, email alert.
-2. **Hardening:** widget live preview, backup and restore scripts and docs, in-app browser testing.
+2. **Hardening:** backup and restore scripts and docs, in-app browser testing.
 3. **Quality of life:** search, bulk download, waveforms, optional transcription.
 4. **Later:** reply to listeners by email, multi-user admin (with per-show access), webhooks, Postgres, phone-in via Twilio.
 

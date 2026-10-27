@@ -46,4 +46,24 @@
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done);
     });
   });
+
+  // Live preview in the show editor: send the form's values to the preview frame as they change.
+  var previewForm = document.querySelector('form[data-preview]');
+  var previewFrame = document.getElementById('preview-frame');
+  if (previewForm && previewFrame) {
+    var sendPreview = function () {
+      var f = previewForm.elements;
+      var values = {
+        buttonLabel: f.button_label.value, promptText: f.prompt_text.value, maxSeconds: f.max_seconds.value,
+        askEmail: f.ask_email.checked, consentText: f.consent_text.value, thanksText: f.thanks_text.value, accentColor: f.accent_color.value,
+      };
+      if (previewFrame.contentWindow) previewFrame.contentWindow.postMessage({ source: 'listenerloop-admin', values: values }, location.origin);
+    };
+    previewForm.addEventListener('input', sendPreview);
+    previewForm.addEventListener('change', sendPreview);
+    window.addEventListener('message', function (e) {
+      if (e.origin === location.origin && e.data && e.data.source === 'listenerloop-preview') sendPreview();
+    });
+    previewFrame.addEventListener('load', sendPreview);
+  }
 })();

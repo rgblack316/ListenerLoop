@@ -94,3 +94,12 @@ textarea[readonly] { font-family: ui-monospace, SFMono-Regular, Menlo, monospace
 @media (max-width: 560px) {
   .row-actions { flex-direction: column; gap: 2px; align-items: flex-end; }
 }
+
+/* Show editor with live preview */
+.show-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.preview iframe { width: 100%; height: 760px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+@media (min-width: 1000px) {
+  .page:has(.show-layout) { max-width: 1160px; }
+  .show-layout { grid-template-columns: minmax(0, 1fr) 420px; }
+  .preview { position: sticky; top: 16px; }
+}

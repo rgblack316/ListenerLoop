@@ -300,7 +300,7 @@ Each phase is done only when its acceptance criteria pass.
 ### Phase 2: Hardening
 
 - [x] Rate limits, origin allowlist, CSP and `frame-ancestors`, with a scripted abuse test run (`test/abuse.test.ts`): 15 kinds of bad request, the per-IP, per-show and daily limits, and a check that nothing is stored and no temporary file is left.
-- [ ] Per-show widget settings with live preview in admin.
+- [x] Per-show widget settings with live preview in admin (`/static/preview.html`, synced by postMessage as you type).
 - [x] File-upload fallback and hosted `/s/:slug` page.
 - [x] Retry for failed processing, with the failure reason shown in the inbox, and email-alert failures shown on the message with a resend button.
 - [x] Automatic deletion by age (`RETENTION_DAYS`). Starred messages are kept.

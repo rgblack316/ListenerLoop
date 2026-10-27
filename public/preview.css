@@ -1,0 +1,9 @@
+/* Preview of the widget inside the show editor. Reuses widget.css so it looks like the real thing. */
+body { padding: 8px 8px 24px; }
+.cap { margin: 12px 4px 4px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.site { margin: 0 4px; }
+.pv-button { display: inline-block; padding: 10px 18px; border-radius: 999px; font-weight: 600; background: var(--accent); color: var(--on-accent); }
+.pv-card { border: 1px solid var(--line); border-radius: 16px; background: var(--field); padding: 16px 18px 20px; pointer-events: none; }
+.pv-input { height: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); }
+.pv-send { display: block; text-align: center; margin-top: 12px; }
+.pv-meter { width: 0; }

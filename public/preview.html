@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Widget preview</title>
+  <link rel="stylesheet" href="/static/widget.css">
+  <link rel="stylesheet" href="/static/preview.css">
+</head>
+<body>
+  <p class="cap">Button on your site</p>
+  <p class="site"><span id="pv-button" class="pv-button">Leave a voicemail</span></p>
+
+  <p class="cap">What opens</p>
+  <main class="card pv-card" aria-hidden="true">
+    <header class="head">
+      <h1 id="pv-title">Leave a voicemail</h1>
+      <span class="icon">&times;</span>
+    </header>
+    <p id="pv-prompt" class="prompt"></p>
+    <section class="recorder">
+      <div class="meter"><div class="meter-bar pv-meter"></div></div>
+      <div class="timer"><span>0:00</span> / <span id="pv-limit">3:00</span></div>
+      <div class="row"><span class="btn primary">Start recording</span></div>
+      <p class="upload"><span class="linkbtn">Or upload an audio file</span></p>
+    </section>
+    <div class="field"><span>Your name <span class="req">(required)</span></span><div class="pv-input"></div></div>
+    <div class="field" id="pv-email"><span>Email <span class="opt">(optional)</span></span><div class="pv-input"></div><small>Only share it if you would like a reply.</small></div>
+    <div class="check" id="pv-consent"><input type="checkbox" tabindex="-1" disabled><span id="pv-consent-text"></span></div>
+    <span class="btn primary wide pv-send">Send message</span>
+  </main>
+
+  <p class="cap">After sending</p>
+  <div class="card pv-card" aria-hidden="true"><p id="pv-thanks" class="done"></p></div>
+  <script src="/static/preview.js"></script>
+</body>
+</html>

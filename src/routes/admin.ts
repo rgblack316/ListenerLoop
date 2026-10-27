@@ -59,6 +59,7 @@ export function adminCsp(): string {
     "media-src 'self' https:",
     "connect-src 'self'",
     "form-action 'self'",
+    "frame-src 'self'",
     "base-uri 'none'",
     "frame-ancestors 'none'",
   ].join('; ');
