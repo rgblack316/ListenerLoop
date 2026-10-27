@@ -202,7 +202,7 @@ Server-rendered pages, with htmx for small live updates such as starring or arch
 | Threat | Control |
 | --- | --- |
 | Bots and spam | Turnstile token verified server-side on every submission, using the app-wide secret key (or the show's override), and the returned hostname is checked against the app's domain; token is single use. |
-| Flooding | Per-IP limit (default 5 submissions per hour), built. A per-show limit and a daily cap per show are *(planned, Phase 2)*. |
+| Flooding | Per-IP limit (default 5 submissions per hour), a per-show limit from everyone (default 60 per hour) and a daily cap per show (default 300). Over a limit, the listener sees a polite "try again later". |
 | Oversized or fake audio | Request size cap, duration cap, `ffprobe` validation with a container allowlist, ffmpeg limited to the file protocol and run with a timeout, one conversion at a time. |
 | Site key misuse | Site keys are public by design, so the origin allowlist, Turnstile and rate limits do the real work. Keys can be rotated. |
 | Clickjacking and framing | `frame-ancestors` restricted to a show's allowed origins on `/widget`; admin pages send `X-Frame-Options: DENY`. |
@@ -251,6 +251,8 @@ All settings come from environment variables (a `.env` file in Docker Compose).
 | `MP3_BITRATE_KBPS` | Output bitrate | `64` |
 | `KEEP_ORIGINALS` | Keep the uploaded original alongside the MP3 (a show can also turn this on) | `false` |
 | `RATE_LIMIT_PER_HOUR` | Submissions per IP per hour | `5` |
+| `RATE_LIMIT_PER_SHOW_HOUR` | Submissions per show per hour, from everyone | `60` |
+| `DAILY_CAP_PER_SHOW` | Submissions per show per 24 hours, from everyone | `300` |
 | `TRUST_PROXY` | Trust forwarded client IP headers; set `false` only if exposed directly | `true` |
 | `PORT`, `HOST`, `LOG_LEVEL` | Server listen settings and log level | `3000`, `0.0.0.0`, `info` |
 | `FFMPEG_PATH`, `FFPROBE_PATH` | Locations of the ffmpeg tools | `ffmpeg`, `ffprobe` |
@@ -296,7 +298,7 @@ Each phase is done only when its acceptance criteria pass.
 
 ### Phase 2: Hardening
 
-- [ ] Rate limits, origin allowlist, CSP and `frame-ancestors`: the basics are built and unit tested in Phase 1; add per-show limits, a daily cap and a scripted abuse test run.
+- [x] Rate limits, origin allowlist, CSP and `frame-ancestors`, with a scripted abuse test run (`test/abuse.test.ts`): 15 kinds of bad request, the per-IP, per-show and daily limits, and a check that nothing is stored and no temporary file is left.
 - [ ] Per-show widget settings with live preview in admin.
 - [x] File-upload fallback and hosted `/s/:slug` page.
 - [x] Retry for failed processing, with the failure reason shown in the inbox, and email-alert failures shown on the message with a resend button.

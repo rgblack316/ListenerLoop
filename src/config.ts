@@ -42,6 +42,8 @@ export interface Config {
   mp3BitrateKbps: number;
   keepOriginals: boolean;
   rateLimitPerHour: number;
+  rateLimitPerShowHour: number;
+  dailyCapPerShow: number;
   retentionDays: number;
   ffmpegPath: string;
   ffprobePath: string;
@@ -160,6 +162,8 @@ export function loadConfig(env: Env = process.env): Config {
     mp3BitrateKbps: int('MP3_BITRATE_KBPS', 64, 16),
     keepOriginals: bool('KEEP_ORIGINALS', false),
     rateLimitPerHour: int('RATE_LIMIT_PER_HOUR', 5, 1),
+    rateLimitPerShowHour: int('RATE_LIMIT_PER_SHOW_HOUR', 60, 1),
+    dailyCapPerShow: int('DAILY_CAP_PER_SHOW', 300, 1),
     retentionDays: int('RETENTION_DAYS', 0, 0),
     ffmpegPath: str('FFMPEG_PATH', 'ffmpeg'),
     ffprobePath: str('FFPROBE_PATH', 'ffprobe'),

@@ -231,6 +231,11 @@ export class Repo {
     return row.n;
   }
 
+  countSinceForShow(showId: string, sinceIso: string): number {
+    const row = this.db.prepare('SELECT COUNT(*) AS n FROM messages WHERE show_id = ? AND created_at >= ?').get(showId, sinceIso) as { n: number };
+    return row.n;
+  }
+
   countRecentByIp(ipHash: string, sinceIso: string): number {
     const row = this.db
       .prepare('SELECT COUNT(*) AS n FROM messages WHERE ip_hash = ? AND created_at >= ?')

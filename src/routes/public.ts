@@ -156,6 +156,17 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: AppContext, stat
       return reject(429, 'rate_limited', 'Too many messages from your network. Please try again later.');
     }
 
+    // Limits for the show as a whole, whoever is sending, so a spread-out flood cannot fill storage.
+    const sinceShowHour = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const sinceShowDay = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    if (
+      repo.countSinceForShow(show.id, sinceShowHour) >= config.rateLimitPerShowHour ||
+      repo.countSinceForShow(show.id, sinceShowDay) >= config.dailyCapPerShow
+    ) {
+      ctx.log.warn({ show: show.slug }, 'show submission limit reached');
+      return reject(429, 'show_busy', 'This show is not taking new messages right now. Please try again later.');
+    }
+
     const token = fields['cf-turnstile-response'];
     if (!token) return reject(400, 'turnstile_required', 'Please complete the verification challenge.');
     const { secretKey } = turnstileKeysFor(ctx, show);
