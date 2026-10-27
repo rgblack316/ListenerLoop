@@ -38,7 +38,7 @@ A self-hosted, open-source (AGPL) widget that lets listeners record a voice mess
 | Processing | ffmpeg run inline after upload through a simple in-process queue. No Redis. |
 | Admin auth | Single admin, argon2 password hash, session cookie. Multi-user later. The admin UI is server-rendered pages with htmx for small live updates, with no SPA framework. |
 | Email alerts | SMTP or Resend, chosen by config. |
-| Spam protection | Cloudflare Turnstile is required for public submissions. One app-wide Turnstile key pair, created once for the app's own domain, covers every show; embedding sites need no Turnstile key of their own. A show can optionally override it with its own key pair in the admin dashboard. |
+| Spam protection | Cloudflare Turnstile is required for public submissions. One app-wide Turnstile key pair, created once for the app's own domain, covers every show; embedding sites need no Turnstile key of their own. There is no per-show override. |
 | Transcription | Deferred to a later phase behind an optional adapter (whisper.cpp or an API). Off by default. |
 | Deploy | Docker Compose on Ubuntu Server (app + Caddy for automatic HTTPS). A systemd install is documented for non-Docker users. |
 | License | AGPL-3.0, matching PodSovereign. |
@@ -76,7 +76,7 @@ Site owners paste one line; everything else lives on the tool's own domain.
 3. The iframe holds the recorder UI and the Turnstile challenge, so host-site CSS and JavaScript cannot interfere with it. Because the challenge runs on the app's own domain, embedding sites need no Turnstile key of their own.
 4. The iframe posts events to the parent with `postMessage` (`vm:ready`, `vm:submitted`, `vm:close`). The parent only accepts them from the widget origin, and fires a `listenerloop:submitted` event on the button so the host page can react (for example, to show its own thank-you).
 
-**Per-show configuration** (managed in admin, fetched by site key): button label and accent color, prompt text, maximum duration, optional Turnstile key override, whether the email field is shown (always optional for the listener; the name field is always shown and required), consent text, thank-you message, and the allowed origins list.
+**Per-show configuration** (managed in admin, fetched by site key): button label and accent color, prompt text, maximum duration, whether the email field is shown (always optional for the listener; the name field is always shown and required), consent text, thank-you message, and the allowed origins list.
 
 **Fallback link:** each show also gets a hosted page at `/s/<show-slug>`, the same recorder on its own page, for newsletters, social bios and browsers where iframe microphone access is blocked. The Shows page in admin lists each show's hosted link.
 
@@ -108,7 +108,7 @@ Five tables for v1, plus `schema_migrations`. IDs are ULIDs; timestamps are UTC.
 
 | Table | Key fields |
 | --- | --- |
-| `shows` | id, name, slug, site_key (public), allowed_origins (list), notify_email, max_seconds, ask_email, consent_text, button_label, accent_color, prompt_text, thanks_text, retain_original, turnstile_site_key (optional override), turnstile_secret_key (optional override, stored encrypted), created_at |
+| `shows` | id, name, slug, site_key (public), allowed_origins (list), notify_email, max_seconds, ask_email, consent_text, button_label, accent_color, prompt_text, thanks_text, retain_original, transcribe, normalize_loudness, noise_reduction, created_at |
 | `messages` | id, show_id, status (`processing`, `ready`, `failed`), starred, archived, sender_name (required), sender_email (optional), consent_given, duration_seconds, mp3_key, original_key, size_bytes, original_mime, ip_hash, user_agent, transcript (nullable, unused so far), notes, error, email_error, read_at, created_at, deleted_at |
 | `admin` | id, email, password_hash (argon2id), created_at (single row in v1; becomes `users` with roles later) |
 | `sessions` | token_hash (sha256 of the cookie token), admin_id, created_at, expires_at |
@@ -145,7 +145,7 @@ The admin is server-rendered, so there is no JSON admin API. Pages and form post
 | `GET /shows` | Manage shows: embed code, allowed sites, rotate key. |
 | `GET /shows/new`, `POST /shows` | Create a show. |
 | `GET /shows/:slug` | One show's inbox. |
-| `GET /shows/:slug/settings`, `POST /shows/:slug/settings` | Edit a show, including the optional Turnstile override. |
+| `GET /shows/:slug/settings`, `POST /shows/:slug/settings` | Edit a show. |
 | `POST /shows/:slug/rotate-key` | Issue a new site key. |
 | `GET /shows/:slug/messages/:id` | Message page (marks it read). |
 | `POST /shows/:slug/messages/:id/star`, `/archive`, `/delete`, `/notes` | Message actions (htmx or plain forms). |
@@ -202,7 +202,7 @@ Server-rendered pages, with htmx for small live updates such as starring or arch
 
 | Threat | Control |
 | --- | --- |
-| Bots and spam | Turnstile token verified server-side on every submission, using the app-wide secret key (or the show's override), and the returned hostname is checked against the app's domain; token is single use. |
+| Bots and spam | Turnstile token verified server-side on every submission, using the app-wide secret key, and the returned hostname is checked against the app's domain; token is single use. |
 | Flooding | Per-IP limit (default 5 submissions per hour), a per-show limit from everyone (default 60 per hour) and a daily cap per show (default 300). Over a limit, the listener sees a polite "try again later". |
 | Oversized or fake audio | Request size cap, duration cap, `ffprobe` validation with a container allowlist, ffmpeg limited to the file protocol and run with a timeout, one conversion at a time. |
 | Site key misuse | Site keys are public by design, so the origin allowlist, Turnstile and rate limits do the real work. Keys can be rotated. |
@@ -235,7 +235,7 @@ All settings come from environment variables (a `.env` file in Docker Compose).
 | --- | --- | --- |
 | `APP_URL` | Public base URL, used in embed code, emails and the Origin and Turnstile hostname checks | required |
 | `SESSION_SECRET` | Signs sessions and encrypts stored secrets (at least 32 characters) | required |
-| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | App-wide Turnstile keys. The key's hostname list needs only the app's own domain; a show can override it in admin | required |
+| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | App-wide Turnstile keys. The key's hostname list needs only the app's own domain | required |
 | `APP_DOMAIN` | Domain only, used by Caddy in Docker Compose | none |
 | `DATA_DIR` | Base folder for data | `./data` |
 | `DATABASE_PATH` | SQLite file location | `<DATA_DIR>/app.db` |

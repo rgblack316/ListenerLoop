@@ -167,15 +167,13 @@ describe('admin: shows', () => {
     expect(page.body).toContain(`${APP_URL}/embed.js`);
   });
 
-  it('edits a show and keeps a Turnstile override encrypted', async () => {
+  it('edits a show and shows its preview', async () => {
     const edit = await formPost(h, `/shows/${show.slug}/settings`, session, {
       name: 'Randy Unscripted',
       slug: 'randy',
       allowed_origins: 'https://randyunscripted.com',
       max_seconds: '120',
       accent_color: '#112233',
-      turnstile_site_key: '0xSITE',
-      turnstile_secret_key: '0xSUPER-SECRET',
       ask_email: '1',
     });
     expect(edit.statusCode).toBe(302);
@@ -183,35 +181,21 @@ describe('admin: shows', () => {
     show = saved;
     expect(saved.slug).toBe('randy');
     expect(saved.max_seconds).toBe(120);
-    expect(saved.turnstile_site_key).toBe('0xSITE');
-    expect(saved.turnstile_secret_key).toMatch(/^v1:/);
-    expect(saved.turnstile_secret_key).not.toContain('SUPER-SECRET');
 
     const form = await h.app.inject({ method: 'GET', url: `/shows/${show.slug}/settings`, headers: { cookie: session.cookie } });
     expect(form.body).toContain('data-preview');
     expect(form.body).toContain('src="/static/preview.html"');
     expect(form.headers['content-security-policy']).toContain("frame-src 'self'");
     expect((await h.app.inject({ method: 'GET', url: '/static/preview.html' })).statusCode).toBe(200);
-    expect(form.body).not.toContain('SUPER-SECRET');
-    expect(form.body).toContain('Leave blank to keep it');
+    expect(form.body).not.toContain('turnstile_site_key');
+    expect(form.body).not.toContain('Turnstile override');
 
+    // Every show's widget uses the one app-wide Turnstile key.
     const cfg = await h.app.inject({ method: 'GET', url: `/api/public/config?key=${saved.site_key}` });
-    expect(cfg.json().turnstileSiteKey).toBe('0xSITE');
-
-    // Saving again without a secret keeps the stored one; unticking asks for both.
-    await formPost(h, `/shows/${show.slug}/settings`, session, { name: 'Randy Unscripted', slug: 'randy', max_seconds: '120', accent_color: '#112233', turnstile_site_key: '0xSITE' });
-    expect(h.ctx.repo.getShow(show.id)!.turnstile_secret_key).toBe(saved.turnstile_secret_key);
-
-    await formPost(h, `/shows/${show.slug}/settings`, session, { name: 'Randy Unscripted', slug: 'randy', max_seconds: '120', accent_color: '#112233', clear_turnstile: '1' });
-    const cleared = h.ctx.repo.getShow(show.id)!;
-    expect(cleared.turnstile_site_key).toBeNull();
-    expect(cleared.turnstile_secret_key).toBeNull();
+    expect(cfg.json().turnstileSiteKey).toBe(h.config.turnstile.siteKey);
   });
 
-  it('refuses a half-set override and duplicate slugs', async () => {
-    const half = await formPost(h, `/shows/${show.slug}/settings`, session, { name: 'Randy', slug: 'randy', max_seconds: '120', accent_color: '#112233', turnstile_site_key: '0xONLY' });
-    expect(half.statusCode).toBe(400);
-    expect(half.body).toContain('both');
+  it('refuses duplicate slugs', async () => {
 
     h.ctx.repo.createShow({ name: 'Other Show' });
     const dup = await formPost(h, `/shows/${show.slug}/settings`, session, { name: 'Randy', slug: 'other-show', max_seconds: '120', accent_color: '#112233' });

@@ -6,16 +6,9 @@ import { showOrigins, type Show } from '../db/repo.js';
 import { assertAllowedFormat, MediaError, probe } from '../media/convert.js';
 import { DURATION_SLACK, processMessage, uploadPath, userFacingError } from '../process.js';
 import { isTestSecret } from '../turnstile.js';
-import { cleanText, decryptSecret, hashIp, isValidEmail, ulid } from '../lib/util.js';
+import { cleanText, hashIp, isValidEmail, ulid } from '../lib/util.js';
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
-
-export function turnstileKeysFor(ctx: AppContext, show: Show): { siteKey: string; secretKey: string } {
-  if (show.turnstile_site_key && show.turnstile_secret_key) {
-    return { siteKey: show.turnstile_site_key, secretKey: decryptSecret(show.turnstile_secret_key, ctx.config.sessionSecret) };
-  }
-  return ctx.config.turnstile;
-}
 
 function fail(reply: FastifyReply, status: number, error: string, message: string): FastifyReply {
   return reply.code(status).send({ error, message });
@@ -98,7 +91,7 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: AppContext, stat
         askEmail: show.ask_email === 1,
         maxUploadMb: config.maxUploadMb,
       },
-      turnstileSiteKey: turnstileKeysFor(ctx, show).siteKey,
+      turnstileSiteKey: ctx.config.turnstile.siteKey,
     });
   });
 
@@ -169,7 +162,7 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: AppContext, stat
 
     const token = fields['cf-turnstile-response'];
     if (!token) return reject(400, 'turnstile_required', 'Please complete the verification challenge.');
-    const { secretKey } = turnstileKeysFor(ctx, show);
+    const { secretKey } = ctx.config.turnstile;
     const result = await ctx.verifyTurnstile({ secret: secretKey, token, remoteIp: req.ip });
     // The challenge runs inside the widget iframe, so it must have been solved on this app's own domain.
     const hostOk = isTestSecret(secretKey) || result.hostname?.toLowerCase() === config.appHostname;

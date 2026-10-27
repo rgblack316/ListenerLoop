@@ -27,7 +27,7 @@ import {
   type Show,
   ftsQuery,
 } from '../db/repo.js';
-import { cleanText, encryptSecret, isValidEmail, parseRange, randomToken, safeFilePart, slugify, ulid } from '../lib/util.js';
+import { cleanText, isValidEmail, parseRange, randomToken, safeFilePart, slugify, ulid } from '../lib/util.js';
 import { homePage, inboxPage, loginPage, messagePage, messageRow, settingsPage, showFormPage, showsPage, type SettingsView, type ShowFormValues } from '../views/pages.js';
 
 const PAGE_SIZE = 25;
@@ -396,7 +396,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
       driver: config.storageDriver,
       location: config.storageDriver === 's3' ? `${config.s3.endpoint || 'AWS S3'} / ${config.s3.bucket}` : config.localStoragePath,
     },
-    turnstile: { siteKey: config.turnstile.siteKey, custom: repo.listShows().filter((s) => s.turnstile_site_key).length },
+    turnstile: { siteKey: config.turnstile.siteKey },
     limits: {
       rateLimitPerHour: config.rateLimitPerHour,
       rateLimitPerShowHour: config.rateLimitPerShowHour,
@@ -502,8 +502,6 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     transcribe: false,
     normalize_loudness: false,
     noise_reduction: 'off',
-    turnstile_site_key: '',
-    has_turnstile_secret: false,
   });
 
   const valuesFromShow = (s: Show): ShowFormValues => ({
@@ -522,8 +520,6 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     transcribe: s.transcribe === 1,
     normalize_loudness: s.normalize_loudness === 1,
     noise_reduction: s.noise_reduction,
-    turnstile_site_key: s.turnstile_site_key ?? '',
-    has_turnstile_secret: !!s.turnstile_secret_key,
   });
 
   const valuesFromBody = (body: unknown, prev: ShowFormValues): ShowFormValues => ({
@@ -542,8 +538,6 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     transcribe: field(body, 'transcribe') === '1',
     normalize_loudness: field(body, 'normalize_loudness') === '1',
     noise_reduction: NOISE_REDUCTION_LEVELS.includes(field(body, 'noise_reduction') as NoiseReduction) ? (field(body, 'noise_reduction') as NoiseReduction) : 'off',
-    turnstile_site_key: cleanText(field(body, 'turnstile_site_key'), 100),
-    has_turnstile_secret: prev.has_turnstile_secret,
   });
 
   interface Parsed {
@@ -569,22 +563,6 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
       if (RESERVED_SLUGS.includes(slug) || (taken && taken.id !== existing.id)) errors.push('That URL slug is already used by another show.');
     }
 
-    const newSecret = field(body, 'turnstile_secret_key').trim();
-    const clear = field(body, 'clear_turnstile') === '1';
-    let tsSite: string | null = existing?.turnstile_site_key ?? null;
-    let tsSecret: string | null = existing?.turnstile_secret_key ?? null;
-    if (clear) {
-      tsSite = null;
-      tsSecret = null;
-    } else if (v.turnstile_site_key || newSecret) {
-      const site = v.turnstile_site_key || tsSite;
-      if (!site || (!newSecret && !tsSecret)) errors.push('Set both the Turnstile site key and secret key, or leave both empty.');
-      else {
-        tsSite = site;
-        if (newSecret) tsSecret = encryptSecret(newSecret, config.sessionSecret);
-      }
-    }
-
     return {
       errors,
       fields: {
@@ -603,8 +581,6 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
         transcribe: v.transcribe ? 1 : 0,
         normalize_loudness: v.normalize_loudness ? 1 : 0,
         noise_reduction: v.noise_reduction,
-        turnstile_site_key: tsSite,
-        turnstile_secret_key: tsSecret,
       },
     };
   };

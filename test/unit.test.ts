@@ -206,3 +206,24 @@ describe('email', () => {
     expect(m.text).toContain('https://listenerloop.app/shows/randy/messages/abc');
   });
 });
+
+describe('database upgrade', () => {
+  it('drops the old per-show Turnstile columns and keeps the shows', async () => {
+    const { default: Database } = await import('better-sqlite3');
+    const { MIGRATIONS, migrate } = await import('../src/db/index.js');
+    const db = new Database(':memory:');
+    db.exec('CREATE TABLE schema_migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)');
+    // Bring a database up to the version before the removal, with an override set on a show.
+    for (const m of MIGRATIONS.filter((x) => x.id < 7)) {
+      db.exec(m.sql);
+      db.prepare('INSERT INTO schema_migrations VALUES (?, ?, ?)').run(m.id, m.name, 'now');
+    }
+    db.prepare("INSERT INTO shows (id, name, slug, site_key, turnstile_site_key, turnstile_secret_key, created_at) VALUES ('s1','Old','old','k','0xSITE','v1:secret','now')").run();
+    migrate(db);
+    const cols = (db.prepare('PRAGMA table_info(shows)').all() as { name: string }[]).map((c) => c.name);
+    expect(cols).not.toContain('turnstile_site_key');
+    expect(cols).not.toContain('turnstile_secret_key');
+    expect((db.prepare("SELECT name FROM shows WHERE id = 's1'").get() as { name: string }).name).toBe('Old');
+    db.close();
+  });
+});

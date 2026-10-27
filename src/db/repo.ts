@@ -25,8 +25,6 @@ export interface Show {
   normalize_loudness: number;
   /** Noise reduction applied when converting: off, light (filters) or strong (neural network). */
   noise_reduction: NoiseReduction;
-  turnstile_site_key: string | null;
-  turnstile_secret_key: string | null; // encrypted
   created_at: string;
 }
 
@@ -163,16 +161,14 @@ export class Repo {
       transcribe: input.transcribe ?? 0,
       normalize_loudness: input.normalize_loudness ?? 0,
       noise_reduction: input.noise_reduction ?? 'off',
-      turnstile_site_key: input.turnstile_site_key ?? null,
-      turnstile_secret_key: input.turnstile_secret_key ?? null,
       created_at: nowIso(),
     };
     this.db
       .prepare(
         `INSERT INTO shows (id, name, slug, site_key, allowed_origins, notify_email, max_seconds, ask_email, consent_text,
-          button_label, accent_color, prompt_text, thanks_text, retain_original, transcribe, normalize_loudness, noise_reduction, turnstile_site_key, turnstile_secret_key, created_at)
+          button_label, accent_color, prompt_text, thanks_text, retain_original, transcribe, normalize_loudness, noise_reduction, created_at)
          VALUES (@id, @name, @slug, @site_key, @allowed_origins, @notify_email, @max_seconds, @ask_email, @consent_text,
-          @button_label, @accent_color, @prompt_text, @thanks_text, @retain_original, @transcribe, @normalize_loudness, @noise_reduction, @turnstile_site_key, @turnstile_secret_key, @created_at)`,
+          @button_label, @accent_color, @prompt_text, @thanks_text, @retain_original, @transcribe, @normalize_loudness, @noise_reduction, @created_at)`,
       )
       .run(show);
     return show;

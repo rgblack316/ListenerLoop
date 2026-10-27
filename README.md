@@ -16,7 +16,7 @@ ListenerLoop is a self-hosted, open-source widget that lets listeners record a v
 - Record in the browser using web standards only (`getUserMedia` and `MediaRecorder`), on desktop and mobile, including iOS Safari.
 - Normalize every recording to MP3 with ffmpeg.
 - Store audio in S3-compatible buckets, with local disk as an option for forks.
-- Protect submissions with Cloudflare Turnstile, using one app-wide key pair (a per-show override is optional).
+- Protect submissions with Cloudflare Turnstile, using one app-wide key pair.
 - Email the admin on each new message (SMTP or Resend).
 - Let listeners optionally share an email address, so a reply feature can follow later.
 
@@ -126,7 +126,7 @@ To restore on the same server, run `restore.sh` with the archive. It asks for co
 | Admin UI | Server-rendered pages with htmx, no SPA framework |
 | Admin auth | Single admin to start (argon2, session cookie); multi-user with per-show access later |
 | Email | SMTP or Resend |
-| Spam protection | Cloudflare Turnstile, one app-wide key (per-show override optional) |
+| Spam protection | Cloudflare Turnstile, one app-wide key for every show |
 | Deploy | Docker Compose on Ubuntu Server (app + Caddy). A systemd guide is planned. |
 
 ## Roadmap

@@ -293,8 +293,6 @@ export interface ShowFormValues {
   transcribe: boolean;
   normalize_loudness: boolean;
   noise_reduction: 'off' | 'light' | 'strong';
-  turnstile_site_key: string;
-  has_turnstile_secret: boolean;
 }
 
 export function showFormPage(opts: {
@@ -345,13 +343,6 @@ export function showFormPage(opts: {
       <small class="muted">Quiet and loud callers end up at a similar level. Applies to new messages only. Very noisy recordings can sound noisier.</small>
       <label class="check"><input type="checkbox" name="transcribe" value="1" ${v.transcribe ? raw('checked') : ''}> Transcribe new messages</label>
       ${opts.transcriptionOn ? '' : html`<small class="muted">Transcription is off on this server. Set TRANSCRIPTION=whisper in .env and run update.sh --restart to use it.</small>`}
-      <fieldset>
-        <legend>Turnstile override (optional)</legend>
-        <p class="muted">Leave these empty to use the app-wide Turnstile key. If you set your own, it must allow this app's domain.</p>
-        <label>Site key<input name="turnstile_site_key" value="${v.turnstile_site_key}" autocomplete="off"></label>
-        <label>Secret key<input type="password" name="turnstile_secret_key" autocomplete="off" placeholder="${v.has_turnstile_secret ? 'Saved. Leave blank to keep it.' : ''}"></label>
-        ${v.has_turnstile_secret ? html`<label class="check"><input type="checkbox" name="clear_turnstile" value="1"> Remove the override and use the app-wide key</label>` : ''}
-      </fieldset>
       <button class="btn primary" type="submit">${show ? 'Save changes' : 'Create show'}</button>
     </form>
     <aside class="preview" aria-label="Preview">
@@ -371,7 +362,7 @@ export interface SettingsView {
   version: string;
   mail: { provider: string; configured: boolean; from: string };
   storage: { driver: string; location: string };
-  turnstile: { siteKey: string; custom: number };
+  turnstile: { siteKey: string };
   limits: { rateLimitPerHour: number; rateLimitPerShowHour: number; dailyCapPerShow: number; maxUploadMb: number; maxSecondsDefault: number; retentionDays: number; keepOriginals: boolean; mp3BitrateKbps: number };
   /** Outcome of the button that was just pressed. */
   result?: { section: 'email' | 'storage' | 'password'; ok: boolean; message: string; steps?: string[] };
@@ -434,7 +425,7 @@ export function settingsPage(v: SettingsView): string {
       <dl class="details">
         <dt>App address</dt><dd>${v.appUrl}</dd>
         <dt>Version</dt><dd>${v.version}</dd>
-        <dt>Turnstile site key</dt><dd>${v.turnstile.siteKey}${v.turnstile.custom ? html` <span class="muted">(${v.turnstile.custom} ${v.turnstile.custom === 1 ? 'show uses its' : 'shows use their'} own key)</span>` : ''}</dd>
+        <dt>Turnstile site key</dt><dd>${v.turnstile.siteKey}</dd>
         <dt>Per-IP limit</dt><dd>${v.limits.rateLimitPerHour} per hour</dd>
         <dt>Per-show limit</dt><dd>${v.limits.rateLimitPerShowHour} per hour, ${v.limits.dailyCapPerShow} per day</dd>
         <dt>Largest upload</dt><dd>${v.limits.maxUploadMb} MB</dd>

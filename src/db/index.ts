@@ -11,7 +11,7 @@ interface Migration {
 }
 
 /** Append-only. Never edit a migration that has shipped; add a new one. */
-const MIGRATIONS: Migration[] = [
+export const MIGRATIONS: Migration[] = [
   {
     id: 1,
     name: 'initial schema',
@@ -138,6 +138,12 @@ const MIGRATIONS: Migration[] = [
     id: 6,
     name: 'noise reduction',
     sql: `ALTER TABLE shows ADD COLUMN noise_reduction TEXT NOT NULL DEFAULT 'off';`,
+  },
+  {
+    id: 7,
+    name: 'remove per-show Turnstile override',
+    // One app-wide Turnstile key covers every show, so the per-show override (and its stored secret) is gone.
+    sql: `ALTER TABLE shows DROP COLUMN turnstile_site_key; ALTER TABLE shows DROP COLUMN turnstile_secret_key;`,
   },
 ];
 
