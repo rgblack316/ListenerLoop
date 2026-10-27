@@ -22,22 +22,21 @@ export function registerBackupRoutes(app: FastifyInstance, ctx: AppContext, kit:
       hour: Number(field(body, 'hour')),
       keep: Number(field(body, 'keep')),
       includeAudio: storage.name === 'local' ? field(body, 'include_audio') === '1' : true,
-      copyToStorage: storage.name === 's3' ? field(body, 'copy_to_storage') === '1' : true,
+      destination: field(body, 'destination') as 'both',
     });
     saveBackupSettings(repo, s);
     return reply.redirect(back('saved'));
   }));
 
-  app.get('/settings/backups/:id/download', ownerAuthed((req, reply) => {
+  app.get('/settings/backups/:id/download', ownerAuthed(async (req, reply) => {
     const b = repo.getBackup((req.params as { id: string }).id);
-    const file = b && b.status === 'ok' ? backupFilePath(ctx, b) : null;
-    if (!b || !file || !fs.existsSync(file)) return notFound(reply);
-    return reply
-      .header('Content-Disposition', `attachment; filename="${b.file}"`)
-      .header('Content-Length', fs.statSync(file).size)
-      .header('Cache-Control', 'no-store')
-      .type('application/gzip')
-      .send(fs.createReadStream(file));
+    if (!b || b.status !== 'ok' || !b.file) return notFound(reply);
+    reply.header('Content-Disposition', `attachment; filename="${b.file}"`).header('Cache-Control', 'no-store').type('application/gzip');
+    const file = backupFilePath(ctx, b);
+    if (file && fs.existsSync(file)) return reply.header('Content-Length', fs.statSync(file).size).send(fs.createReadStream(file));
+    // Bucket-only backups are streamed from the bucket.
+    if (b.storage_key && (await storage.exists(b.storage_key))) return reply.send(await storage.getStream(b.storage_key));
+    return notFound(reply);
   }));
 
   app.post('/settings/backups/:id/delete', ownerMutating(async (req, reply) => {

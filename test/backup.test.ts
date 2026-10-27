@@ -71,7 +71,7 @@ describe('backups', () => {
     expect(fs.readdirSync(path.dirname(file)).some((f) => f.endsWith('.part'))).toBe(false);
   });
 
-  it('leaves audio out when asked, and copies to the bucket only with the s3 driver', async () => {
+  it('leaves audio out when asked, and keeps archives on the server, in the bucket, or both', async () => {
     saveBackupSettings(h.ctx.repo, { ...loadBackupSettings(h.ctx.repo), includeAudio: false });
     const r = startBackup(h.ctx, 'manual', null) as { id: string };
     await backupsIdle();
@@ -80,21 +80,62 @@ describe('backups', () => {
     expect(b.storage_key).toBeNull();
     expect(list(backupFilePath(h.ctx, b)!).some((n) => n.startsWith('audio'))).toBe(false);
 
+    // With local storage there is no bucket, so every choice keeps the file on the server.
+    saveBackupSettings(h.ctx.repo, { ...loadBackupSettings(h.ctx.repo), destination: 'bucket' });
+    const r1 = startBackup(h.ctx, 'manual', null) as { id: string };
+    await backupsIdle();
+    expect(h.ctx.repo.getBackup(r1.id)).toMatchObject({ has_local: 1, storage_key: null });
+
     const real = h.ctx.storage;
-    const puts: string[] = [];
+    const stored = new Map<string, Buffer>();
     Object.defineProperty(real, 'name', { value: 's3', configurable: true });
     const origPut = real.put.bind(real);
-    real.put = async (key, file, type) => { puts.push(key); await origPut(key, file, type); };
-    try {
-      const r2 = startBackup(h.ctx, 'manual', null) as { id: string };
+    const origExists = real.exists.bind(real);
+    const origDelete = real.delete.bind(real);
+    const origStream = real.getStream.bind(real);
+    real.put = async (key, file) => { if (key.startsWith('backups/')) stored.set(key, fs.readFileSync(file as string)); else await origPut(key, file, 'x'); };
+    real.exists = async (key) => stored.has(key) || origExists(key);
+    real.delete = async (key) => { if (!stored.delete(key)) await origDelete(key); };
+    real.getStream = (async (key: string) => (stored.has(key) ? (await import('node:stream')).Readable.from(stored.get(key)!) : origStream(key))) as typeof real.getStream;
+    const run = async (destination: 'server' | 'bucket' | 'both') => {
+      saveBackupSettings(h.ctx.repo, { ...loadBackupSettings(h.ctx.repo), destination });
+      const r = startBackup(h.ctx, 'manual', null) as { id: string };
       await backupsIdle();
-      const b2 = h.ctx.repo.getBackup(r2.id)!;
-      expect(b2.storage_key).toMatch(/^backups\/listenerloop-.*\.tar\.gz$/);
-      expect(puts).toEqual([b2.storage_key]);
-      expect(b2.includes_audio).toBe(0); // audio is in the bucket, not the archive
+      return h.ctx.repo.getBackup(r.id)!;
+    };
+    try {
+      const both = await run('both');
+      expect(both).toMatchObject({ has_local: 1, status: 'ok', includes_audio: 0 }); // audio is in the bucket, not the archive
+      expect(both.storage_key).toMatch(/^backups\/listenerloop-.*\.tar\.gz$/);
+      expect(stored.has(both.storage_key!)).toBe(true);
+      expect(fs.existsSync(backupFilePath(h.ctx, both)!)).toBe(true);
+
+      const server = await run('server');
+      expect(server).toMatchObject({ has_local: 1, storage_key: null });
+
+      const bucket = await run('bucket');
+      expect(bucket).toMatchObject({ has_local: 0, status: 'ok' });
+      expect(backupFilePath(h.ctx, bucket)).toBeNull();
+      expect(fs.existsSync(path.join(h.config.dataDir, 'backups', bucket.file!))).toBe(false);
+      expect(stored.has(bucket.storage_key!)).toBe(true);
+      // a bucket-only backup downloads straight from the bucket
+      const dl = await get(`/settings/backups/${bucket.id}/download`, owner);
+      expect(dl.statusCode).toBe(200);
+      expect(Buffer.compare(dl.rawPayload, stored.get(bucket.storage_key!)!)).toBe(0);
+      expect(spawnSync('tar', ['-tzf', '-'], { input: dl.rawPayload, encoding: 'utf8' }).stdout).toContain('snapshot/app.db');
+      // deleting removes the bucket copy
+      const { removeBackup } = await import('../src/backup.js');
+      await removeBackup(h.ctx, bucket);
+      expect(stored.has(bucket.storage_key!)).toBe(false);
+      await removeBackup(h.ctx, both);
+      expect(stored.has(both.storage_key!)).toBe(false);
+      expect(fs.existsSync(path.join(h.config.dataDir, 'backups', both.file!))).toBe(false);
     } finally {
       Object.defineProperty(real, 'name', { value: 'local', configurable: true });
       real.put = origPut;
+      real.exists = origExists;
+      real.delete = origDelete;
+      real.getStream = origStream;
     }
   });
 

@@ -69,6 +69,8 @@ export interface Backup {
   file: string | null;
   size_bytes: number | null;
   includes_audio: number;
+  /** 1 when the archive is on this server's disk. */
+  has_local: number;
   storage_key: string | null;
   error: string | null;
   started_by: string | null;

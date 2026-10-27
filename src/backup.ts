@@ -13,10 +13,11 @@ export interface BackupSettings {
   hour: number;
   keep: number;
   includeAudio: boolean;
-  copyToStorage: boolean;
+  /** Where archives are kept: this server, the S3/R2 bucket, or both. A local-storage install can only use the server. */
+  destination: 'server' | 'bucket' | 'both';
 }
 
-export const DEFAULT_BACKUP_SETTINGS: BackupSettings = { schedule: 'off', weekday: 0, hour: 3, keep: 14, includeAudio: true, copyToStorage: true };
+export const DEFAULT_BACKUP_SETTINGS: BackupSettings = { schedule: 'off', weekday: 0, hour: 3, keep: 14, includeAudio: true, destination: 'both' };
 
 export function loadBackupSettings(repo: Repo): BackupSettings {
   try {
@@ -40,7 +41,7 @@ export function normalizeSettings(s: Partial<BackupSettings>): BackupSettings {
     hour: int(s.hour, 0, 23, d.hour),
     keep: int(s.keep, 1, 100, d.keep),
     includeAudio: s.includeAudio !== false,
-    copyToStorage: s.copyToStorage !== false,
+    destination: s.destination === 'server' || s.destination === 'bucket' || s.destination === 'both' ? s.destination : (s as { copyToStorage?: boolean }).copyToStorage === false ? 'server' : 'both',
   };
 }
 
@@ -84,7 +85,7 @@ export function scheduledBackupDue(repo: Repo, now = new Date()): boolean {
 }
 
 export const backupDir = (ctx: AppContext): string => path.join(ctx.config.dataDir, 'backups');
-export const backupFilePath = (ctx: AppContext, b: Backup): string | null => (b.file ? path.join(backupDir(ctx), path.basename(b.file)) : null);
+export const backupFilePath = (ctx: AppContext, b: Backup): string | null => (b.file && b.has_local ? path.join(backupDir(ctx), path.basename(b.file)) : null);
 
 const stamp = (d: Date): string => d.toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
 
@@ -137,12 +138,16 @@ async function runBackup(ctx: AppContext, id: string, kind: Backup['kind']): Pro
     fs.renameSync(partial, final);
     const size = fs.statSync(final).size;
 
+    // A local-storage install has no bucket, so it always keeps the file on the server.
+    const dest = storage.name === 's3' ? settings.destination : 'server';
     let storageKey: string | null = null;
-    if (settings.copyToStorage && storage.name === 's3') {
+    if (dest !== 'server') {
       storageKey = `backups/${name}`;
       await storage.put(storageKey, final, 'application/gzip');
     }
-    repo.updateBackup(id, { status: 'ok', file: name, size_bytes: size, includes_audio: withAudio ? 1 : 0, storage_key: storageKey, finished_at: new Date().toISOString() });
+    const keepLocal = dest !== 'bucket';
+    if (!keepLocal) fs.rmSync(final, { force: true });
+    repo.updateBackup(id, { status: 'ok', file: name, size_bytes: size, includes_audio: withAudio ? 1 : 0, has_local: keepLocal ? 1 : 0, storage_key: storageKey, finished_at: new Date().toISOString() });
     log.info({ backup: name, size }, 'backup finished');
     await pruneBackups(ctx, settings.keep);
   } catch (err) {
@@ -150,6 +155,7 @@ async function runBackup(ctx: AppContext, id: string, kind: Backup['kind']): Pro
     log.error({ err }, 'backup failed');
     repo.updateBackup(id, { status: 'failed', error: reason, finished_at: new Date().toISOString() });
     fs.rmSync(partial, { force: true });
+    fs.rmSync(final, { force: true });
     if (kind === 'scheduled') await alertFailure(ctx, reason);
   } finally {
     fs.rmSync(staging, { recursive: true, force: true });

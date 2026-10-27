@@ -279,6 +279,11 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX idx_backups_created ON backups(created_at);
     `,
   },
+  {
+    id: 13,
+    name: 'backup destinations',
+    sql: `ALTER TABLE backups ADD COLUMN has_local INTEGER NOT NULL DEFAULT 1;`,
+  },
 ];
 
 export function migrate(db: DB): void {

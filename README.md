@@ -99,7 +99,7 @@ Choosing a model: `base.en` is about real time on 2 CPU cores and fine for clear
 
 ## Backup and restore
 
-**From the app.** Owners can open **Settings, Backups** to back up on demand or on a schedule (daily or weekly at a chosen UTC hour, keeping the newest N). Each backup is one `.tar.gz` with a consistent database copy and, with local storage, the audio files; it does not include `.env`. With S3 or R2 storage each backup can also be copied into the bucket under `backups/`, which puts a copy off the server. Backups are kept in `/data/backups` inside the app's Docker volume, the same disk as the database, so download them or use the bucket copy. A failed scheduled backup emails the first owner. Restore with `restore.sh` below (on a new server, restore your `.env` first or keep a copy of it).
+**From the app.** Owners can open **Settings, Backups** to back up on demand or on a schedule (daily or weekly at a chosen UTC hour, keeping the newest N). Each backup is one `.tar.gz` with a consistent database copy and, with local storage, the audio files; it does not include `.env`. With S3 or R2 storage you choose where archives are kept: on this server only, in the bucket only (under `backups/`), or both. Server copies live in `/data/backups` inside the app's Docker volume, the same disk as the database, so download them or keep a bucket copy. A failed scheduled backup emails the first owner. Restore with `restore.sh` below (on a new server, restore your `.env` first or keep a copy of it).
 
 **From the command line** (also includes `.env`):
 

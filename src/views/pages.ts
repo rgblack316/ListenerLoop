@@ -501,7 +501,7 @@ export function settingsPage(v: SettingsView): string {
     <section class="card" id="backups">
       <h2>Backups</h2>
       ${outcome('backups')}
-      <p class="muted">A backup is one file holding a safe copy of the database (messages, shows, users, replies, transcripts and settings)${v.backups.storage === 'local' ? ' and the audio files' : '. Your audio lives in S3 or R2 and is not included, so protect that bucket separately'}. It does not include the <code>.env</code> file. Backups are kept on this server in <code>${v.backups.dir}</code>.</p>
+      <p class="muted">A backup is one file holding a safe copy of the database (messages, shows, users, replies, transcripts and settings)${v.backups.storage === 'local' ? ' and the audio files' : '. Your audio lives in S3 or R2 and is not included, so protect that bucket separately'}. It does not include the <code>.env</code> file. Backups on this server are kept in <code>${v.backups.dir}</code>.</p>
       <form method="post" action="/settings/backups/run" class="inline">${csrfField(v.csrf)}
         <button class="btn primary" type="submit" ${v.backups.running ? raw('disabled') : ''}>${v.backups.running ? 'A backup is running…' : 'Back up now'}</button>
       </form>
@@ -524,8 +524,16 @@ export function settingsPage(v: SettingsView): string {
         </label>
         <label>Keep the newest <input type="number" name="keep" value="${v.backups.settings.keep}" min="1" max="100" required> backups</label>
         ${v.backups.storage === 'local'
-          ? html`<label class="check"><input type="checkbox" name="include_audio" value="1" ${v.backups.settings.includeAudio ? raw('checked') : ''}> Include the audio files</label>`
-          : html`<label class="check"><input type="checkbox" name="copy_to_storage" value="1" ${v.backups.settings.copyToStorage ? raw('checked') : ''}> Also copy each backup into your storage bucket (under <code>backups/</code>), so a copy lives off this server</label>`}
+          ? html`<label class="check"><input type="checkbox" name="include_audio" value="1" ${v.backups.settings.includeAudio ? raw('checked') : ''}> Include the audio files</label>
+            <small class="muted">Backups are stored on this server. To keep them in a bucket as well, switch the server to S3 or R2 storage.</small>`
+          : html`<label>Store backups
+              <select name="destination">
+                <option value="server" ${v.backups.settings.destination === 'server' ? raw('selected') : ''}>On this server only</option>
+                <option value="bucket" ${v.backups.settings.destination === 'bucket' ? raw('selected') : ''}>In the bucket only (under backups/)</option>
+                <option value="both" ${v.backups.settings.destination === 'both' ? raw('selected') : ''}>Both</option>
+              </select>
+              <small>A bucket copy survives the loss of this server. Audio already lives in the bucket, so archives hold the database only.</small>
+            </label>`}
         <button class="btn" type="submit">Save schedule</button>
       </form>
       <h3>Saved backups</h3>
@@ -533,7 +541,7 @@ export function settingsPage(v: SettingsView): string {
         ? html`<ul class="msgs">${v.backups.list.map(
             (b) => html`<li class="msg"><span class="msg-main"><span class="who">${timeTag(b.created_at)} <span class="badge">${b.kind}</span>
                 ${b.status === 'running' ? html`<span class="badge">running</span>` : b.status === 'failed' ? html`<span class="badge bad">failed</span>` : ''}</span>
-                <span class="meta">${b.status === 'ok' ? html`${(b.size_bytes ?? 0) < 1048576 ? `${Math.max(1, Math.round((b.size_bytes ?? 0) / 1024))} KB` : `${((b.size_bytes ?? 0) / 1048576).toFixed(1)} MB`}${b.includes_audio ? ' · with audio' : ' · database only'}${b.storage_key ? ' · copied to storage' : ''}` : ''}${b.error ? html`${b.error}` : ''}${b.started_by ? html` · by ${b.started_by}` : ''}</span></span>
+                <span class="meta">${b.status === 'ok' ? html`${(b.size_bytes ?? 0) < 1048576 ? `${Math.max(1, Math.round((b.size_bytes ?? 0) / 1024))} KB` : `${((b.size_bytes ?? 0) / 1048576).toFixed(1)} MB`}${b.includes_audio ? ' · with audio' : ' · database only'} · ${b.has_local && b.storage_key ? 'server + bucket' : b.storage_key ? 'bucket only' : 'on server'}` : ''}${b.error ? html`${b.error}` : ''}${b.started_by ? html` · by ${b.started_by}` : ''}</span></span>
               <span class="row-actions">
                 ${b.status === 'ok' ? html`<a href="/settings/backups/${b.id}/download">Download</a>` : ''}
                 ${b.status !== 'running' ? html`<form method="post" action="/settings/backups/${b.id}/delete" class="inline" data-confirm="Delete this backup?">${csrfField(v.csrf)}<button class="link danger">Delete</button></form>` : ''}
