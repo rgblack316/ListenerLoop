@@ -115,7 +115,7 @@ To restore on the same server, run `restore.sh` with the archive. It asks for co
 ## Roadmap
 
 1. **MVP (built):** recorder, upload, MP3 conversion, storage drivers, admin inbox, email alert.
-2. **Hardening (done):** abuse limits, retention, settings, live preview, backups, in-app browser check on Facebook.
+2. **Hardening (done):** abuse limits, retention, settings, live preview, backups, in-app browser check (Facebook tested, Instagram assumed).
 3. **Quality of life:** search, bulk download, waveforms, optional transcription.
 4. **Later:** reply to listeners by email, multi-user admin (with per-show access), webhooks, Postgres, phone-in via Twilio.
 
