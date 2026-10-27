@@ -125,7 +125,7 @@ async function main(): Promise<void> {
       if (notify && !isValidEmail(notify)) throw new Error('--notify-email is not a valid address.');
       const maxSeconds = Number.parseInt(values.get('max-seconds')?.[0] ?? String(config.maxSecondsDefault), 10);
       if (!Number.isInteger(maxSeconds) || maxSeconds < 5 || maxSeconds > 600) throw new Error('--max-seconds must be 5 to 600.');
-      const show = repo.createShow({ name, allowed_origins: JSON.stringify(origins), notify_email: notify ?? null, max_seconds: maxSeconds });
+      const show = repo.createShow({ name, allowed_origins: JSON.stringify(origins), notify_email: notify ?? repo.getAdmin()?.email ?? null, max_seconds: maxSeconds });
       console.log(`Created "${show.name}" (${show.slug}).`);
       console.log(`Embed code:\n  <script src="${config.appUrl}/embed.js" data-site-key="${show.site_key}" async></script>`);
       if (origins.length === 0) console.log('No allowed sites yet. Add some with: set-origins ' + show.slug + ' https://yoursite.com');

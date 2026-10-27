@@ -1,5 +1,5 @@
 import { html, raw, type Raw } from '../lib/html.js';
-import { INBOX_FILTERS, showOrigins, type InboxFilter, type MessageWithShow, type Show } from '../db/repo.js';
+import { INBOX_FILTERS, showOrigins, type InboxFilter, type MessageWithShow, type Reply, type Show } from '../db/repo.js';
 import { csrfField, durationText, layout, timeTag } from './layout.js';
 
 const FILTER_LABELS: Record<InboxFilter, string> = {
@@ -47,7 +47,7 @@ export function messageRow(m: MessageWithShow, snippet?: string): Raw {
     <button class="star${m.starred ? ' on' : ''}" hx-post="${msgBase(m)}/star" hx-target="#row-${m.id}" hx-swap="outerHTML"
       aria-label="${m.starred ? 'Remove star' : 'Star message'}" aria-pressed="${m.starred ? 'true' : 'false'}">${m.starred ? '★' : '☆'}</button>
     <a class="msg-main" href="${msgBase(m)}">
-      <span class="who">${m.sender_name}${unread ? html` <span class="badge new">new</span>` : ''}${m.status === 'failed' ? html` <span class="badge bad">failed</span>` : ''}${m.status === 'processing' ? html` <span class="badge">processing</span>` : ''}${m.status === 'ready' && m.email_error ? html` <span class="badge bad">email failed</span>` : ''}</span>
+      <span class="who">${m.sender_name}${unread ? html` <span class="badge new">new</span>` : ''}${m.status === 'failed' ? html` <span class="badge bad">failed</span>` : ''}${m.status === 'processing' ? html` <span class="badge">processing</span>` : ''}${m.status === 'ready' && m.email_error ? html` <span class="badge bad">email failed</span>` : ''}${m.replied_at ? html` <span class="badge">replied</span>` : ''}</span>
       ${m.status === 'failed' ? html`<span class="meta fail">${m.error ?? 'Processing failed.'}</span>` : ''}
       <span class="meta">${m.show_name}${m.duration_seconds !== null ? ` · ${durationText(m.duration_seconds)}` : ''} · ${timeTag(m.created_at)}</span>
       ${snippet ? html`<span class="snippet">${snippetHtml(snippet)}</span>` : ''}
@@ -172,7 +172,46 @@ function waveformHtml(stored: string | null): Raw | string {
   return html`<div class="wave" data-wave="${peaks.join(',')}" role="img" aria-label="Waveform of the message. Click to jump to a point."></div>`;
 }
 
-export function messagePage(m: MessageWithShow, csrf: string, flash?: string, transcriptionOn = false): string {
+export interface ReplyView {
+  replies: Reply[];
+  /** Why replying is not possible right now, or null when it is. */
+  blockedText: string | null;
+  blockedCode: string | null;
+  draft: { subject: string; body: string; error: string };
+  maxBody: number;
+}
+
+function replyCard(m: MessageWithShow, csrf: string, v: ReplyView): Raw | string {
+  if (m.status !== 'ready') return '';
+  return html`<section class="card" id="reply">
+      <h2>Reply to ${m.sender_name}</h2>
+      ${v.replies.length
+        ? html`<ul class="thread">${v.replies.map(
+            (r) => html`<li class="reply${r.status === 'failed' ? ' failed' : ''}">
+              <p class="meta">${r.status === 'sent' ? 'Sent' : 'Not sent'} ${timeTag(r.created_at)} to ${r.to_email}</p>
+              <p class="subject"><strong>${r.subject}</strong></p>
+              <p class="transcript">${r.body}</p>
+              ${r.status === 'failed'
+                ? html`<div class="alert"><p>This reply could not be sent: ${r.error ?? 'unknown error'}</p>
+                    <form method="post" action="${msgBase(m)}/replies/${r.id}/resend">${csrfField(csrf)}<button class="btn">Try again</button></form></div>`
+                : ''}
+            </li>`,
+          )}</ul>`
+        : ''}
+      ${v.blockedText
+        ? html`<p class="muted">${v.blockedText}</p>${v.blockedCode === 'no_show_email' ? html`<p><a class="btn" href="/shows/${m.show_slug}/settings">Open show settings</a></p>` : ''}`
+        : html`${v.draft.error ? html`<div class="alert" role="alert"><p>${v.draft.error}</p></div>` : ''}
+          <form method="post" action="${msgBase(m)}/reply" class="stack">
+            ${csrfField(csrf)}
+            <p class="muted">Sent to ${m.sender_email} from the replies address as ${m.show_name}. Their answer goes to ${m.show_email}.</p>
+            <label>Subject<input name="subject" value="${v.draft.subject}" maxlength="150" required></label>
+            <label>Message<textarea name="body" rows="6" maxlength="${v.maxBody}" required>${v.draft.body}</textarea></label>
+            <button class="btn primary" type="submit">Send reply</button>
+          </form>`}
+    </section>`;
+}
+
+export function messagePage(m: MessageWithShow, csrf: string, flash?: string, transcriptionOn = false, reply?: ReplyView): string {
   return layout({
     title: `Message from ${m.sender_name}`,
     csrf,
@@ -233,6 +272,7 @@ export function messagePage(m: MessageWithShow, csrf: string, flash?: string, tr
         : ''}
     </section>`
       : ''}
+    ${reply ? replyCard(m, csrf, reply) : ''}
     <section class="card">
       <h2>Private notes</h2>
       <form method="post" action="${msgBase(m)}/notes" class="stack">
@@ -321,7 +361,10 @@ export function showFormPage(opts: {
         <textarea name="allowed_origins" rows="3" placeholder="https://example.com">${v.allowed_origins}</textarea>
         <small>One address per line, like https://randyunscripted.com. Include www if your site uses it.</small>
       </label>
-      <label>Notification email<input type="email" name="notify_email" value="${v.notify_email}" placeholder="Defaults to your admin email"></label>
+      <label>Show email address
+        <input type="email" name="notify_email" value="${v.notify_email}" required maxlength="254" placeholder="you@yourshow.com">
+        <small>New-message alerts go here. When you reply to a listener, this becomes the Reply-To address, so their answer comes back to you.</small>
+      </label>
       <label>Maximum message length (seconds)<input type="number" name="max_seconds" value="${v.max_seconds}" min="5" max="${opts.maxSecondsLimit}" required></label>
       <label>Button label<input name="button_label" value="${v.button_label}" maxlength="60"></label>
       <label>Prompt text<input name="prompt_text" value="${v.prompt_text}" maxlength="300"></label>

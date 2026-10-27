@@ -5,6 +5,9 @@ export interface MailMessage {
   to: string;
   subject: string;
   text: string;
+  /** Overrides the app's default From address (for example a show name on the replies address). */
+  from?: string;
+  replyTo?: string;
 }
 
 export interface Mailer {
@@ -45,7 +48,7 @@ class SmtpMailer implements Mailer {
   }
 
   async send(message: MailMessage): Promise<void> {
-    await this.transport.sendMail({ from: this.from, to: message.to, subject: message.subject, text: message.text });
+    await this.transport.sendMail({ from: message.from ?? this.from, to: message.to, replyTo: message.replyTo, subject: message.subject, text: message.text });
   }
 }
 
@@ -61,7 +64,7 @@ class ResendMailer implements Mailer {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: this.from, to: [message.to], subject: message.subject, text: message.text }),
+      body: JSON.stringify({ from: message.from ?? this.from, to: [message.to], subject: message.subject, text: message.text, ...(message.replyTo ? { reply_to: message.replyTo } : {}) }),
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) {

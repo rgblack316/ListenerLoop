@@ -322,7 +322,7 @@ Each phase is done only when its acceptance criteria pass.
 
 ### Phase 4: Later
 
-- Reply to listeners who chose to share an email address, from the message view in admin, sent through the configured mail provider.
+- [x] Reply to listeners who chose to share an email address, from the message page in admin. Sent through the configured mail provider from `REPLY_FROM_ADDRESS` (for example replies@listenerloop.app) with the show's name as the display name and the show's email address as Reply-To, so the listener's answer goes straight to the host. The show's email address is now required in show settings. Replies are stored with the message (migration 8), shown as a thread, retryable if sending fails, limited to 10 per message and 30 per hour, and deleted with the message.
 - Multi-user admin with roles and invitations, where a user can be limited to selected shows (`users` and `user_shows` tables; narrow `accessibleShows()` in `src/routes/admin.ts`, which every show, inbox, message and audio route already uses); optional TOTP.
 - Webhooks and an RSS or JSON export of messages.
 - Phone-in number via Twilio as a separate module.
@@ -341,7 +341,7 @@ Each phase is done only when its acceptance criteria pass.
 
 **Open questions**
 
-- Reply feature details: which address replies are sent from, and whether replies are stored with the message.
+- Reply feature, later: should a copy go to the show's inbox, and should incoming answers be threaded back into the app? (Today the answer lands in the show's own mailbox.)
 
 ## Build notes (Phase 1)
 

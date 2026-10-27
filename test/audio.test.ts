@@ -159,7 +159,7 @@ describe.skipIf(!ffmpeg)('noise reduction', () => {
         method: 'POST',
         url: `/shows/${s.slug}/settings`,
         headers: { 'content-type': 'application/x-www-form-urlencoded', origin: APP_URL, cookie },
-        payload: new URLSearchParams({ _csrf: csrf, name: 'NR form', slug: s.slug, max_seconds: '60', accent_color: '#21649e', allowed_origins: APP_URL, noise_reduction: value }).toString(),
+        payload: new URLSearchParams({ _csrf: csrf, name: 'NR form', slug: s.slug, max_seconds: '60', accent_color: '#21649e', allowed_origins: APP_URL, notify_email: 'h@example.com', noise_reduction: value }).toString(),
       });
     expect((await post('strong')).statusCode).toBe(302);
     expect(h.ctx.repo.getShow(s.id)!.noise_reduction).toBe('strong');

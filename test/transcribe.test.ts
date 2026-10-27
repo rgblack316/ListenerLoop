@@ -95,7 +95,7 @@ describe.skipIf(!ffmpeg)('transcription', () => {
     const s = h.ctx.repo.createShow({ name: 'Toggle' });
     const form = await h.app.inject({ method: 'GET', url: `/shows/${s.slug}/settings`, headers: { cookie } });
     expect(form.body).toContain('name="transcribe"');
-    const res = await formPost(h, `/shows/${s.slug}/settings`, { cookie, csrf }, { name: 'Toggle', slug: s.slug, max_seconds: '60', accent_color: '#21649e', transcribe: '1', allowed_origins: APP_URL });
+    const res = await formPost(h, `/shows/${s.slug}/settings`, { cookie, csrf }, { name: 'Toggle', slug: s.slug, max_seconds: '60', accent_color: '#21649e', transcribe: '1', allowed_origins: APP_URL, notify_email: 'h@example.com' });
     expect(res.statusCode).toBe(302);
     expect(h.ctx.repo.getShow(s.id)!.transcribe).toBe(1);
   });

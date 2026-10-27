@@ -145,6 +145,26 @@ export const MIGRATIONS: Migration[] = [
     // One app-wide Turnstile key covers every show, so the per-show override (and its stored secret) is gone.
     sql: `ALTER TABLE shows DROP COLUMN turnstile_site_key; ALTER TABLE shows DROP COLUMN turnstile_secret_key;`,
   },
+  {
+    id: 8,
+    name: 'replies to listeners',
+    sql: `
+      ALTER TABLE messages ADD COLUMN replied_at TEXT;
+      CREATE TABLE replies (
+        id TEXT PRIMARY KEY,
+        message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+        to_email TEXT NOT NULL,
+        reply_to TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        body TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('sent', 'failed')),
+        error TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_replies_message ON replies(message_id, created_at);
+      CREATE INDEX idx_replies_created ON replies(created_at);
+    `,
+  },
 ];
 
 export function migrate(db: DB): void {

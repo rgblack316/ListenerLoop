@@ -129,6 +129,13 @@ describe('admin: shows', () => {
     expect(h.ctx.repo.listShows()).toHaveLength(0);
   });
 
+  it('requires an email address for the show', async () => {
+    const res = await formPost(h, '/shows', session, { name: 'Needs Email', max_seconds: '60', accent_color: '#112233' });
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toContain('email address is required');
+    expect(h.ctx.repo.listShows()).toHaveLength(0);
+  });
+
   it('validates the form and explains each problem', async () => {
     const res = await formPost(h, '/shows', session, {
       name: '',
@@ -138,7 +145,7 @@ describe('admin: shows', () => {
       accent_color: 'red',
     });
     expect(res.statusCode).toBe(400);
-    for (const text of ['Show name is required', 'not valid addresses', 'notification email', 'between 5 and 600', 'hex color']) {
+    for (const text of ['Show name is required', 'not valid addresses', 'show email address does not look right', 'between 5 and 600', 'hex color']) {
       expect(res.body).toContain(text);
     }
     expect(h.ctx.repo.listShows()).toHaveLength(0);
@@ -174,6 +181,7 @@ describe('admin: shows', () => {
       allowed_origins: 'https://randyunscripted.com',
       max_seconds: '120',
       accent_color: '#112233',
+      notify_email: 'randy@randyunscripted.test',
       ask_email: '1',
     });
     expect(edit.statusCode).toBe(302);

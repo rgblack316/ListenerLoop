@@ -59,6 +59,8 @@ export interface Config {
   transcribeTimeoutSec: number;
   /** RNNoise model file used by the "Stronger" noise reduction setting. */
   rnnoiseModel: string;
+  /** Address replies to listeners are sent from. Defaults to the address in MAIL_FROM. */
+  replyFromAddress: string;
 }
 
 type Env = Record<string, string | undefined>;
@@ -144,6 +146,9 @@ export function loadConfig(env: Env = process.env): Config {
   if (!['smtp', 'resend', 'none'].includes(mailProvider)) {
     problems.push(`MAIL_PROVIDER must be "smtp", "resend" or "none" (got "${mailProvider}")`);
   }
+  const addressOf = (v: string): string => (/<([^<>\s]+@[^<>\s]+)>/.exec(v)?.[1] ?? v).trim();
+  const replyFromAddress = addressOf(str('REPLY_FROM_ADDRESS') || str('MAIL_FROM'));
+  if (replyFromAddress && !/^[^\s@<>",]+@[^\s@<>",]+\.[^\s@<>",]+$/.test(replyFromAddress)) problems.push('REPLY_FROM_ADDRESS must be a plain email address like replies@example.com');
   const mail = {
     provider: (['smtp', 'resend', 'none'].includes(mailProvider) ? mailProvider : 'none') as 'smtp' | 'resend' | 'none',
     from: str('MAIL_FROM'),
@@ -190,6 +195,7 @@ export function loadConfig(env: Env = process.env): Config {
     whisperModelDir: path.resolve(str('WHISPER_MODEL_DIR', path.join(dataDir, 'models'))),
     whisperThreads: int('WHISPER_THREADS', 2, 1),
     whisperLanguage: str('WHISPER_LANGUAGE', whisperModel.endsWith('.en') ? 'en' : 'auto'),
+    replyFromAddress: replyFromAddress,
     rnnoiseModel: str('RNNOISE_MODEL', fileURLToPath(new URL('../models/rnnoise-bd.rnnn', import.meta.url))),
     transcribeTimeoutSec: int('TRANSCRIBE_TIMEOUT_SEC', 1800, 30),
   };

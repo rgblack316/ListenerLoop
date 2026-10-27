@@ -12,6 +12,16 @@ import {
   type AdminSession,
 } from '../auth.js';
 import type { AppContext } from '../context.js';
+import {
+  cleanSubject,
+  defaultReplySubject,
+  MAX_REPLIES_PER_HOUR,
+  MAX_REPLIES_PER_MESSAGE,
+  MAX_REPLY_BODY,
+  REPLY_BLOCK_TEXT,
+  replyBlocked,
+  sendReply,
+} from '../reply.js';
 import { buildZip, MAX_ZIP_MESSAGES } from '../zip.js';
 import { queueTranscription, transcriptionAvailable } from '../transcribe.js';
 import { notifyNewMessage, purgeMessage, retryMessage } from '../process.js';
@@ -28,7 +38,7 @@ import {
   ftsQuery,
 } from '../db/repo.js';
 import { cleanText, isValidEmail, parseRange, randomToken, safeFilePart, slugify, ulid } from '../lib/util.js';
-import { homePage, inboxPage, loginPage, messagePage, messageRow, settingsPage, showFormPage, showsPage, type SettingsView, type ShowFormValues } from '../views/pages.js';
+import { homePage, inboxPage, type ReplyView, loginPage, messagePage, messageRow, settingsPage, showFormPage, showsPage, type SettingsView, type ShowFormValues } from '../views/pages.js';
 
 const PAGE_SIZE = 25;
 const appVersion = (): string => {
@@ -54,6 +64,8 @@ const FLASH: Record<string, string> = {
   retrying: 'Retrying. This usually takes a few seconds; reload to see the result.',
   transcribing: 'Transcribing. This can take a few minutes; reload to see the result.',
   nopicked: 'Tick the messages you want to download first.',
+  replied: 'Reply sent.',
+  replyfailed: 'The reply could not be sent. The reason is shown below, and you can try again.',
   notranscribe: 'Transcription is not switched on for this server.',
   alert: 'Alert email handled. If it failed again, the reason is shown below.',
 };
@@ -235,6 +247,18 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
   };
   const here = (m: { show_slug: string; id: string }): string => `/shows/${m.show_slug}/messages/${m.id}`;
 
+  /** What the message page needs to show the reply box and the conversation so far. */
+  const replyView = (m: NonNullable<ReturnType<typeof messageFor>>, draft?: { subject: string; body: string; error: string }): ReplyView => {
+    const blocked = replyBlocked(ctx, m);
+    return {
+      replies: repo.listReplies(m.id),
+      blockedText: blocked ? REPLY_BLOCK_TEXT[blocked] : null,
+      blockedCode: blocked,
+      draft: draft ?? { subject: defaultReplySubject(m.show_name), body: '', error: '' },
+      maxBody: MAX_REPLY_BODY,
+    };
+  };
+
   app.get(
     '/shows/:slug/messages/:id',
     authed((req, reply, session) => {
@@ -242,7 +266,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
       if (!m) return notFound(reply);
       if (m.status === 'ready' && !m.read_at) repo.updateMessage(m.id, { read_at: new Date().toISOString() });
       const flash = FLASH[(req.query as { flash?: string }).flash ?? ''];
-      return page(reply, messagePage(m, session.csrf, flash, transcriptionAvailable(ctx)));
+      return page(reply, messagePage(m, session.csrf, flash, transcriptionAvailable(ctx), replyView(m)));
     }),
   );
 
@@ -307,6 +331,43 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
       if (!m) return notFound(reply);
       if (m.status === 'ready') await notifyNewMessage(ctx, m.id);
       return reply.redirect(`${here(m)}?flash=alert`);
+    }),
+  );
+
+  app.post(
+    '/shows/:slug/messages/:id/reply',
+    mutating(async (req, reply, session) => {
+      const m = messageFor(req, session);
+      if (!m) return notFound(reply);
+      const subject = cleanSubject(field(req.body, 'subject')) || defaultReplySubject(m.show_name);
+      const body = field(req.body, 'body').replace(/\r\n/g, '\n').trim();
+      const refuse = (error: string): FastifyReply =>
+        page(reply, messagePage(m, session.csrf, undefined, transcriptionAvailable(ctx), replyView(m, { subject, body, error })), 400);
+      const blocked = replyBlocked(ctx, m);
+      if (blocked) return refuse(REPLY_BLOCK_TEXT[blocked]);
+      if (!body) return refuse('Write your reply first.');
+      if (body.length > MAX_REPLY_BODY) return refuse(`Keep the reply under ${MAX_REPLY_BODY} characters.`);
+      if (repo.countRepliesForMessage(m.id) >= MAX_REPLIES_PER_MESSAGE) return refuse('That is the most replies this message allows.');
+      if (repo.countRepliesSince(new Date(Date.now() - 3_600_000).toISOString()) >= MAX_REPLIES_PER_HOUR) return refuse('Too many replies this hour. Please wait a while.');
+      const result = await sendReply(ctx, m, { subject, body });
+      return reply.redirect(`${here(m)}?flash=${result.ok ? 'replied' : 'replyfailed'}`);
+    }),
+  );
+
+  app.post(
+    '/shows/:slug/messages/:id/replies/:rid/resend',
+    mutating(async (req, reply, session) => {
+      const m = messageFor(req, session);
+      const prior = m ? repo.getReply((req.params as { rid: string }).rid) : undefined;
+      if (!m || !prior || prior.message_id !== m.id) return notFound(reply);
+      if (prior.status === 'failed') {
+        if (repo.countRepliesSince(new Date(Date.now() - 3_600_000).toISOString()) >= MAX_REPLIES_PER_HOUR) {
+          return reply.redirect(`${here(m)}?flash=replyfailed`);
+        }
+        const result = await sendReply(ctx, m, { subject: prior.subject, body: prior.body }, prior.id);
+        return reply.redirect(`${here(m)}?flash=${result.ok ? 'replied' : 'replyfailed'}`);
+      }
+      return reply.redirect(here(m));
     }),
   );
 
@@ -550,7 +611,8 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     if (!v.name) errors.push('Show name is required.');
     const { origins, invalid } = parseOriginList(v.allowed_origins);
     if (invalid.length) errors.push(`These sites are not valid addresses: ${invalid.join(', ')}`);
-    if (v.notify_email && !isValidEmail(v.notify_email)) errors.push('The notification email does not look right.');
+    if (!v.notify_email) errors.push("The show's email address is required. Alerts go there, and listener replies use it as the Reply-To address.");
+    else if (!isValidEmail(v.notify_email)) errors.push('The show email address does not look right.');
     const maxSeconds = Number.parseInt(v.max_seconds, 10);
     if (!Number.isInteger(maxSeconds) || maxSeconds < 5 || maxSeconds > MAX_SECONDS_LIMIT) {
       errors.push(`Maximum length must be between 5 and ${MAX_SECONDS_LIMIT} seconds.`);
@@ -569,7 +631,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
         name: v.name,
         ...(slug ? { slug } : {}),
         allowed_origins: JSON.stringify(origins),
-        notify_email: v.notify_email || null,
+        notify_email: v.notify_email,
         max_seconds: maxSeconds,
         ask_email: v.ask_email ? 1 : 0,
         consent_text: v.consent_text,

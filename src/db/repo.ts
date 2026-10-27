@@ -56,6 +56,8 @@ export interface Message {
   /** Why the email alert could not be sent, or null if it was sent (or none is configured). */
   email_error: string | null;
   read_at: string | null;
+  /** When the first reply to the listener was sent. */
+  replied_at: string | null;
   created_at: string;
   deleted_at: string | null;
 }
@@ -63,7 +65,19 @@ export interface Message {
 /** Slugs that would clash with fixed paths under /shows. */
 export const RESERVED_SLUGS = ['new'];
 
-export type MessageWithShow = Message & { show_name: string; show_slug: string };
+export type MessageWithShow = Message & { show_name: string; show_slug: string; show_email: string | null };
+
+export interface Reply {
+  id: string;
+  message_id: string;
+  to_email: string;
+  reply_to: string;
+  subject: string;
+  body: string;
+  status: 'sent' | 'failed';
+  error: string | null;
+  created_at: string;
+}
 
 export type InboxFilter = 'inbox' | 'new' | 'starred' | 'archived' | 'failed' | 'all';
 export const INBOX_FILTERS: InboxFilter[] = ['inbox', 'new', 'starred', 'archived', 'failed', 'all'];
@@ -200,7 +214,7 @@ export class Repo {
   getMessage(id: string): MessageWithShow | undefined {
     return this.db
       .prepare(
-        `SELECT m.*, s.name AS show_name, s.slug AS show_slug FROM messages m JOIN shows s ON s.id = m.show_id
+        `SELECT m.*, s.name AS show_name, s.slug AS show_slug, s.notify_email AS show_email FROM messages m JOIN shows s ON s.id = m.show_id
          WHERE m.id = ? AND m.deleted_at IS NULL`,
       )
       .get(id) as MessageWithShow | undefined;
@@ -251,7 +265,7 @@ export class Repo {
     const { where, params } = this.filterSql(filter, opts.showId, opts.search);
     return this.db
       .prepare(
-        `SELECT m.*, s.name AS show_name, s.slug AS show_slug FROM messages m JOIN shows s ON s.id = m.show_id
+        `SELECT m.*, s.name AS show_name, s.slug AS show_slug, s.notify_email AS show_email FROM messages m JOIN shows s ON s.id = m.show_id
          WHERE ${where} ORDER BY m.created_at DESC LIMIT @limit OFFSET @offset`,
       )
       .all({ ...params, limit: opts.limit, offset: opts.offset }) as MessageWithShow[];
@@ -294,6 +308,35 @@ export class Repo {
 
   listProcessing(): Message[] {
     return this.db.prepare("SELECT * FROM messages WHERE status = 'processing' AND deleted_at IS NULL ORDER BY created_at").all() as Message[];
+  }
+
+  // ---- replies ----
+  insertReply(r: Omit<Reply, 'created_at'>): void {
+    this.db
+      .prepare('INSERT INTO replies (id, message_id, to_email, reply_to, subject, body, status, error, created_at) VALUES (@id, @message_id, @to_email, @reply_to, @subject, @body, @status, @error, @created_at)')
+      .run({ ...r, created_at: nowIso() });
+  }
+
+  getReply(id: string): Reply | undefined {
+    return this.db.prepare('SELECT * FROM replies WHERE id = ?').get(id) as Reply | undefined;
+  }
+
+  updateReply(id: string, fields: Partial<Pick<Reply, 'status' | 'error'>>): void {
+    const keys = Object.keys(fields);
+    if (keys.length === 0) return;
+    this.db.prepare(`UPDATE replies SET ${keys.map((k) => `${k} = @${k}`).join(', ')} WHERE id = @__id`).run({ ...fields, __id: id });
+  }
+
+  listReplies(messageId: string): Reply[] {
+    return this.db.prepare('SELECT * FROM replies WHERE message_id = ? ORDER BY created_at').all(messageId) as Reply[];
+  }
+
+  countRepliesForMessage(messageId: string): number {
+    return (this.db.prepare('SELECT COUNT(*) AS n FROM replies WHERE message_id = ?').get(messageId) as { n: number }).n;
+  }
+
+  countRepliesSince(sinceIso: string): number {
+    return (this.db.prepare('SELECT COUNT(*) AS n FROM replies WHERE created_at >= ?').get(sinceIso) as { n: number }).n;
   }
 
   /** Ready messages that have audio but no waveform yet. */

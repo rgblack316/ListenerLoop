@@ -121,3 +121,8 @@ mark { background: #fde68a; color: inherit; padding: 0 1px; border-radius: 2px; 
 
 .bulk { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 8px; flex-wrap: wrap; }
 .msg .pick { margin: 0; flex: none; width: 18px; height: 18px; align-self: center; }
+
+.thread { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 10px; }
+.reply { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.reply.failed { border-color: #b42318; }
+.reply p { margin: 0 0 6px; }

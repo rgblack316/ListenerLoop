@@ -10,8 +10,8 @@
 #
 # Options:  --yes   Ask nothing. Answers come from environment variables named like the
 #                   .env settings (APP_DOMAIN, TURNSTILE_SITE_KEY, ...), plus INSTALL_MODE
-#                   (https or tunnel), ADMIN_EMAIL, ADMIN_PASSWORD, FIRST_SHOW_NAME and
-#                   FIRST_SHOW_ORIGINS.
+#                   (https or tunnel), ADMIN_EMAIL, ADMIN_PASSWORD, FIRST_SHOW_NAME,
+#                   FIRST_SHOW_ORIGINS and FIRST_SHOW_EMAIL.
 set -euo pipefail
 
 SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
@@ -244,7 +244,8 @@ elif ask_yn "Add a show now?" "$shows_default"; then add_show=1; else add_show=0
 if [ "$add_show" = 1 ]; then
   ask_valid FIRST_SHOW_NAME "Show name" "" '^.+$' "A show name is required."
   ask FIRST_SHOW_ORIGINS "Website(s) that will embed it, separated by spaces (for example https://mypodcast.com)" ""
-  args=(add-show --name "$FIRST_SHOW_NAME")
+  ask_valid FIRST_SHOW_EMAIL "Email address for this show (new-message alerts go here, and listener replies use it as the Reply-To)" "${FIRST_SHOW_EMAIL:-${ADMIN_EMAIL:-}}" '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' "Enter a valid email address."
+  args=(add-show --name "$FIRST_SHOW_NAME" --notify-email "$FIRST_SHOW_EMAIL")
   for o in ${FIRST_SHOW_ORIGINS:-}; do args+=(--origin "$o"); done
   cli "${args[@]}" || warn "The show could not be added. Add it later in the admin under Shows."
 fi
