@@ -111,7 +111,7 @@ To restore on the same server, run `restore.sh` with the archive. It asks for co
 - One installation, many shows, each with its own site key, allowed sites, widget text and inbox.
 - Embed button, recorder modal (name required, email optional, consent notice), Turnstile, MP3 conversion, local or S3 storage.
 - Upload-a-file fallback when the microphone is blocked, and a hosted recorder page for each show at `/s/<slug>` for newsletters and social bios.
-- Admin: sign in, per-show and combined inboxes, playback with speed control and download, star, archive, delete, private notes, search (name, email, notes, transcripts), optional on-server transcription, a waveform you can click to seek, bulk download of selected messages as a zip (MP3s, transcripts and a CSV index), an optional per-show volume-levelling setting, and an email alert for each new message.
+- Admin: sign in, per-show and combined inboxes, playback with speed control and download, star, archive, delete, private notes, search (name, email, notes, transcripts), optional on-server transcription, a waveform you can click to seek, bulk download of selected messages as a zip (MP3s, transcripts and a CSV index), optional per-show noise reduction and volume levelling (-19 LUFS, the mono podcast standard), and an email alert for each new message.
 
 **Not built yet:** replies to listeners, multiple users. See the roadmap.
 

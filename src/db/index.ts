@@ -134,6 +134,11 @@ const MIGRATIONS: Migration[] = [
       ALTER TABLE messages ADD COLUMN waveform TEXT;
     `,
   },
+  {
+    id: 6,
+    name: 'noise reduction',
+    sql: `ALTER TABLE shows ADD COLUMN noise_reduction TEXT NOT NULL DEFAULT 'off';`,
+  },
 ];
 
 export function migrate(db: DB): void {

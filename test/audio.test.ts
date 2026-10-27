@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { audioFilter } from '../src/media/convert.js';
 import { computePeaks } from '../src/media/waveform.js';
 import { backfillWaveforms } from '../src/process.js';
 import { APP_URL, hasFfmpeg, login, makeHarness, multipart, type Harness } from './helpers.js';
@@ -103,5 +104,66 @@ describe.skipIf(!ffmpeg)('loudness, waveform storage and backfill', () => {
     await h.ctx.queue.idle();
     expect(h.ctx.repo.getMessage(id)!.waveform).toBe('[]');
     expect(backfillWaveforms(h.ctx)).toBe(0);
+  });
+});
+
+describe('audio filter chain', () => {
+  it('cleans before it levels, and falls back from stronger to light without a model', () => {
+    expect(audioFilter({})).toBeNull();
+    expect(audioFilter({ normalize: true })).toBe('loudnorm=I=-19:TP=-1.5:LRA=11');
+    expect(audioFilter({ denoise: 'light', normalize: true })).toBe('highpass=f=80,afftdn=nr=12:nf=-40,loudnorm=I=-19:TP=-1.5:LRA=11');
+    expect(audioFilter({ denoise: 'strong', rnnoiseModel: '/app/models/m.rnnn' })).toBe('highpass=f=80,arnndn=m=/app/models/m.rnnn');
+    expect(audioFilter({ denoise: 'strong' })).toBe('highpass=f=80,afftdn=nr=12:nf=-40');
+    expect(audioFilter({ denoise: 'strong', rnnoiseModel: "/odd:path/it's.rnnn" })).toContain("arnndn=m=/odd\\:path/it\\'s.rnnn");
+  });
+});
+
+/** Steady background noise only, as a streamed WebM. */
+function noisyWebm(): Buffer {
+  const r = spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'anoisesrc=color=pink:amplitude=0.2:duration=3', '-c:a', 'libopus', '-f', 'webm', 'pipe:1'], { maxBuffer: 20 * 1024 * 1024 });
+  if (r.status !== 0) throw new Error(String(r.stderr));
+  return r.stdout;
+}
+
+describe.skipIf(!ffmpeg)('noise reduction', () => {
+  let h: Harness;
+  beforeAll(async () => {
+    h = await makeHarness();
+  });
+  afterAll(async () => {
+    await h.close();
+  });
+
+  it('lowers steady background noise, more so on the stronger setting, and the app saves the choice', async () => {
+    const level: Record<string, number> = {};
+    for (const mode of ['off', 'light', 'strong'] as const) {
+      const show = h.ctx.repo.createShow({ name: `NR ${mode}`, noise_reduction: mode });
+      const body = multipart({ key: show.site_key, name: 'Nia', consent: 'true', 'cf-turnstile-response': 'ok' }, { data: noisyWebm() });
+      const res = await h.app.inject({ method: 'POST', url: '/api/public/messages', payload: body.payload, headers: { ...body.headers, origin: APP_URL } });
+      expect(res.statusCode).toBe(202);
+      await h.ctx.queue.idle();
+      const m = h.ctx.repo.getMessage(res.json().id)!;
+      expect(m.status, mode).toBe('ready');
+      level[mode] = meanVolumeDb(path.join(h.config.localStoragePath, m.mp3_key!));
+    }
+    expect(level.light).toBeLessThan(level.off! - 2);
+    expect(level.strong).toBeLessThan(level.light! - 8);
+    expect(h.ctx.repo.getShow(h.ctx.repo.listShows().find((s) => s.name === 'NR strong')!.id)!.noise_reduction).toBe('strong');
+  });
+
+  it('saves the setting from the show form and ignores junk values', async () => {
+    const { cookie, csrf } = await login(h);
+    const s = h.ctx.repo.createShow({ name: 'NR form' });
+    const post = (value: string) =>
+      h.app.inject({
+        method: 'POST',
+        url: `/shows/${s.slug}/settings`,
+        headers: { 'content-type': 'application/x-www-form-urlencoded', origin: APP_URL, cookie },
+        payload: new URLSearchParams({ _csrf: csrf, name: 'NR form', slug: s.slug, max_seconds: '60', accent_color: '#21649e', allowed_origins: APP_URL, noise_reduction: value }).toString(),
+      });
+    expect((await post('strong')).statusCode).toBe(302);
+    expect(h.ctx.repo.getShow(s.id)!.noise_reduction).toBe('strong');
+    expect((await post('"; DROP TABLE shows;--')).statusCode).toBe(302);
+    expect(h.ctx.repo.getShow(s.id)!.noise_reduction).toBe('off');
   });
 });

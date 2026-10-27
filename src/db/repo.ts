@@ -1,6 +1,9 @@
 import type { DB } from './index.js';
 import { randomToken, slugify, ulid } from '../lib/util.js';
 
+export type NoiseReduction = 'off' | 'light' | 'strong';
+export const NOISE_REDUCTION_LEVELS: NoiseReduction[] = ['off', 'light', 'strong'];
+
 export interface Show {
   id: string;
   name: string;
@@ -20,6 +23,8 @@ export interface Show {
   transcribe: number;
   /** 1 = even out the volume of new messages (EBU R128 loudness normalization) when converting. */
   normalize_loudness: number;
+  /** Noise reduction applied when converting: off, light (filters) or strong (neural network). */
+  noise_reduction: NoiseReduction;
   turnstile_site_key: string | null;
   turnstile_secret_key: string | null; // encrypted
   created_at: string;
@@ -157,6 +162,7 @@ export class Repo {
       retain_original: input.retain_original ?? 0,
       transcribe: input.transcribe ?? 0,
       normalize_loudness: input.normalize_loudness ?? 0,
+      noise_reduction: input.noise_reduction ?? 'off',
       turnstile_site_key: input.turnstile_site_key ?? null,
       turnstile_secret_key: input.turnstile_secret_key ?? null,
       created_at: nowIso(),
@@ -164,9 +170,9 @@ export class Repo {
     this.db
       .prepare(
         `INSERT INTO shows (id, name, slug, site_key, allowed_origins, notify_email, max_seconds, ask_email, consent_text,
-          button_label, accent_color, prompt_text, thanks_text, retain_original, transcribe, normalize_loudness, turnstile_site_key, turnstile_secret_key, created_at)
+          button_label, accent_color, prompt_text, thanks_text, retain_original, transcribe, normalize_loudness, noise_reduction, turnstile_site_key, turnstile_secret_key, created_at)
          VALUES (@id, @name, @slug, @site_key, @allowed_origins, @notify_email, @max_seconds, @ask_email, @consent_text,
-          @button_label, @accent_color, @prompt_text, @thanks_text, @retain_original, @transcribe, @normalize_loudness, @turnstile_site_key, @turnstile_secret_key, @created_at)`,
+          @button_label, @accent_color, @prompt_text, @thanks_text, @retain_original, @transcribe, @normalize_loudness, @noise_reduction, @turnstile_site_key, @turnstile_secret_key, @created_at)`,
       )
       .run(show);
     return show;

@@ -63,6 +63,8 @@ export async function processMessage(ctx: AppContext, id: string): Promise<void>
       bitrateKbps: config.mp3BitrateKbps,
       maxSeconds: show.max_seconds + DURATION_SLACK + 3,
       normalize: show.normalize_loudness === 1,
+      denoise: show.noise_reduction,
+      rnnoiseModel: fs.existsSync(config.rnnoiseModel) ? config.rnnoiseModel : undefined,
     });
     const outInfo = await probe(output, config.ffprobePath);
     const duration = outInfo.durationSeconds ?? info.durationSeconds ?? 0;

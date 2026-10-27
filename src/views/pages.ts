@@ -292,6 +292,7 @@ export interface ShowFormValues {
   retain_original: boolean;
   transcribe: boolean;
   normalize_loudness: boolean;
+  noise_reduction: 'off' | 'light' | 'strong';
   turnstile_site_key: string;
   has_turnstile_secret: boolean;
 }
@@ -332,6 +333,14 @@ export function showFormPage(opts: {
       <label>Accent color<input type="color" name="accent_color" value="${v.accent_color}"></label>
       <label class="check"><input type="checkbox" name="ask_email" value="1" ${v.ask_email ? raw('checked') : ''}> Show the optional email field</label>
       <label class="check"><input type="checkbox" name="retain_original" value="1" ${v.retain_original ? raw('checked') : ''}> Keep the original recording next to the MP3</label>
+      <label>Background noise reduction
+        <select name="noise_reduction">
+          <option value="off" ${v.noise_reduction === 'off' ? raw('selected') : ''}>Off</option>
+          <option value="light" ${v.noise_reduction === 'light' ? raw('selected') : ''}>Light: removes rumble and steady hiss</option>
+          <option value="strong" ${v.noise_reduction === 'strong' ? raw('selected') : ''}>Stronger: removes more, including changing noise</option>
+        </select>
+        <small>Applies to new messages only, and cannot be undone on a saved message unless you keep the original recording. Stronger can make voices sound slightly processed.</small>
+      </label>
       <label class="check"><input type="checkbox" name="normalize_loudness" value="1" ${v.normalize_loudness ? raw('checked') : ''}> Even out the volume of new messages</label>
       <small class="muted">Quiet and loud callers end up at a similar level. Applies to new messages only. Very noisy recordings can sound noisier.</small>
       <label class="check"><input type="checkbox" name="transcribe" value="1" ${v.transcribe ? raw('checked') : ''}> Transcribe new messages</label>

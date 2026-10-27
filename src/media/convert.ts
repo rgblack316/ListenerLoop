@@ -98,6 +98,23 @@ export interface ConvertOptions {
   timeoutMs?: number;
   /** Even out the volume (EBU R128, -19 LUFS, the podcast standard for mono). */
   normalize?: boolean;
+  /** Clean up background noise before levelling. 'strong' needs rnnoiseModel and otherwise falls back to 'light'. */
+  denoise?: 'off' | 'light' | 'strong';
+  rnnoiseModel?: string;
+}
+
+const escapeFilterValue = (s: string): string => s.replace(/[\\:']/g, (c) => `\\${c}`);
+
+/** The ffmpeg audio filter chain: clean up noise first, then level, so levelling never boosts the noise. */
+export function audioFilter(opts: Pick<ConvertOptions, 'normalize' | 'denoise' | 'rnnoiseModel'>): string | null {
+  const chain: string[] = [];
+  if (opts.denoise === 'light' || opts.denoise === 'strong') {
+    chain.push('highpass=f=80');
+    if (opts.denoise === 'strong' && opts.rnnoiseModel) chain.push(`arnndn=m=${escapeFilterValue(opts.rnnoiseModel)}`);
+    else chain.push('afftdn=nr=12:nf=-40');
+  }
+  if (opts.normalize) chain.push('loudnorm=I=-19:TP=-1.5:LRA=11');
+  return chain.length ? chain.join(',') : null;
 }
 
 /** Convert any supported audio file to mono 44.1 kHz MP3 with metadata stripped. */
@@ -108,7 +125,7 @@ export async function toMp3(input: string, output: string, opts: ConvertOptions)
     '-i', input,
     '-t', String(opts.maxSeconds),
     '-vn', '-map', '0:a:0', '-map_metadata', '-1',
-    ...(opts.normalize ? ['-af', 'loudnorm=I=-19:TP=-1.5:LRA=11'] : []),
+    ...(audioFilter(opts) ? ['-af', audioFilter(opts)!] : []),
     '-ac', '1', '-ar', '44100',
     '-codec:a', 'libmp3lame', '-b:a', `${opts.bitrateKbps}k`,
     output,

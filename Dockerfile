@@ -40,6 +40,7 @@ COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node package.json ./
 COPY --chown=node:node public ./public
 COPY --chown=node:node brand-assets ./brand-assets
+COPY --chown=node:node models ./models
 USER node
 VOLUME /data
 EXPOSE 3000

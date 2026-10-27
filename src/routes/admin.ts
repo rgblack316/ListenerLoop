@@ -17,6 +17,8 @@ import { queueTranscription, transcriptionAvailable } from '../transcribe.js';
 import { notifyNewMessage, purgeMessage, retryMessage } from '../process.js';
 import {
   INBOX_FILTERS,
+  NOISE_REDUCTION_LEVELS,
+  type NoiseReduction,
   normalizeOrigin,
   parseOriginList,
   RESERVED_SLUGS,
@@ -499,6 +501,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     retain_original: false,
     transcribe: false,
     normalize_loudness: false,
+    noise_reduction: 'off',
     turnstile_site_key: '',
     has_turnstile_secret: false,
   });
@@ -518,6 +521,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     retain_original: s.retain_original === 1,
     transcribe: s.transcribe === 1,
     normalize_loudness: s.normalize_loudness === 1,
+    noise_reduction: s.noise_reduction,
     turnstile_site_key: s.turnstile_site_key ?? '',
     has_turnstile_secret: !!s.turnstile_secret_key,
   });
@@ -537,6 +541,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     retain_original: field(body, 'retain_original') === '1',
     transcribe: field(body, 'transcribe') === '1',
     normalize_loudness: field(body, 'normalize_loudness') === '1',
+    noise_reduction: NOISE_REDUCTION_LEVELS.includes(field(body, 'noise_reduction') as NoiseReduction) ? (field(body, 'noise_reduction') as NoiseReduction) : 'off',
     turnstile_site_key: cleanText(field(body, 'turnstile_site_key'), 100),
     has_turnstile_secret: prev.has_turnstile_secret,
   });
@@ -597,6 +602,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
         retain_original: v.retain_original ? 1 : 0,
         transcribe: v.transcribe ? 1 : 0,
         normalize_loudness: v.normalize_loudness ? 1 : 0,
+        noise_reduction: v.noise_reduction,
         turnstile_site_key: tsSite,
         turnstile_secret_key: tsSecret,
       },

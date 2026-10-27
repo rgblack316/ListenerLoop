@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 export class ConfigError extends Error {
@@ -56,6 +57,8 @@ export interface Config {
   /** 'en' for English-only (.en) models, otherwise automatic detection unless WHISPER_LANGUAGE is set. */
   whisperLanguage: string;
   transcribeTimeoutSec: number;
+  /** RNNoise model file used by the "Stronger" noise reduction setting. */
+  rnnoiseModel: string;
 }
 
 type Env = Record<string, string | undefined>;
@@ -187,6 +190,7 @@ export function loadConfig(env: Env = process.env): Config {
     whisperModelDir: path.resolve(str('WHISPER_MODEL_DIR', path.join(dataDir, 'models'))),
     whisperThreads: int('WHISPER_THREADS', 2, 1),
     whisperLanguage: str('WHISPER_LANGUAGE', whisperModel.endsWith('.en') ? 'en' : 'auto'),
+    rnnoiseModel: str('RNNOISE_MODEL', fileURLToPath(new URL('../models/rnnoise-bd.rnnn', import.meta.url))),
     transcribeTimeoutSec: int('TRANSCRIBE_TIMEOUT_SEC', 1800, 30),
   };
 

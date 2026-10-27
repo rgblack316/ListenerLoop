@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { Show } from '../src/db/repo.js';
 import { csvCell } from '../src/zip.js';
 import { APP_URL, hasFfmpeg, login, makeAudio, makeHarness, multipart, type Harness } from './helpers.js';
 
@@ -22,8 +23,8 @@ describe.skipIf(!hasFfmpeg())('bulk zip download', () => {
   let h: Harness;
   let cookie = '';
   let csrf = '';
-  let a: { id: string; slug: string };
-  let b: { id: string; slug: string };
+  let a: Show;
+  let b: Show;
   const ids: Record<string, string> = {};
 
   const send = async (key: string, name: string): Promise<string> => {

@@ -316,6 +316,7 @@ Each phase is done only when its acceptance criteria pass.
 - [x] Waveform display in the player: peaks computed at processing time (older messages are filled in at startup), click or drag to seek.
 - [x] Optional transcription: whisper.cpp built into the image, per-show toggle (migration 4), separate low-priority queue after the email alert, model downloaded on first use, retry/re-run from the message page, .txt download, searchable. A hosted-API adapter is still possible behind the same interface (`TRANSCRIPTION=...`).
 - [x] Loudness normalization option (per show, migration 5).
+- [x] Background noise reduction (per show, migration 6): Off, Light (high-pass 80 Hz plus `afftdn`) or Stronger (high-pass plus the RNNoise neural model through `arnndn`, vendored in `models/`). Runs before loudness normalization in the same ffmpeg pass, and applies to new messages only.
 
 **Acceptance (met):** with transcription enabled, a new message gains a searchable transcript without delaying the email alert. Phase 3 is complete.
 
