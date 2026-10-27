@@ -1,4 +1,21 @@
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { esc, html, raw, type Raw } from '../lib/html.js';
+
+/**
+ * A short fingerprint of the admin CSS and script, added to their addresses so a browser always loads the
+ * new files after an update instead of reusing a cached older copy.
+ */
+const ASSET_VERSION = ((): string => {
+  try {
+    const hash = createHash('sha1');
+    for (const f of ['admin.css', 'admin.js']) hash.update(fs.readFileSync(fileURLToPath(new URL(`../../public/${f}`, import.meta.url))));
+    return hash.digest('hex').slice(0, 10);
+  } catch {
+    return String(Date.now());
+  }
+})();
 
 export type NavKey = 'home' | 'inbox' | 'shows' | 'settings';
 
@@ -33,7 +50,7 @@ export function layout(opts: LayoutOptions): string {
 <meta name="htmx-config" content='{"allowEval":false,"includeIndicatorStyles":false,"selfRequestsOnly":true}'>
 <title>${esc(opts.title)} · ListenerLoop</title>
 <link rel="icon" type="image/svg+xml" href="/static/brand/ListenerLoop-original-gradient.svg">
-<link rel="stylesheet" href="/static/admin.css">
+<link rel="stylesheet" href="/static/admin.css?v=${ASSET_VERSION}">
 </head>
 <body${headers ? ` hx-headers='${esc(headers)}'` : ''}>
 ${nav}
@@ -41,7 +58,7 @@ ${nav}
 ${opts.body}
 </main>
 <script src="/static/vendor/htmx.min.js"></script>
-<script src="/static/admin.js"></script>
+<script src="/static/admin.js?v=${ASSET_VERSION}"></script>
 </body>
 </html>`;
 }

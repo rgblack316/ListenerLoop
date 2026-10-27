@@ -108,8 +108,8 @@ export function inboxPage(v: InboxView): string {
         )}
       </div>`}
       <form class="search" method="get" action="${inboxBase(v.show)}" role="search">
-        <input type="search" name="q" value="${v.search}" placeholder="Search name, email, notes, transcript" aria-label="Search messages" maxlength="200">
-        <button type="submit">Search</button>
+        <input type="search" name="q" value="${v.search}" placeholder="Search messages" aria-label="Search messages" maxlength="200">
+        <button class="btn" type="submit">Search</button>
       </form>
     </div>
     ${v.messages.length > 0
@@ -294,7 +294,7 @@ export function embedSnippet(appUrl: string, siteKey: string): string {
 export function coverThumb(show: Pick<Show, 'slug' | 'name' | 'cover_key' | 'cover_updated_at'>, size: 'sm' | 'lg' = 'sm'): Raw {
   if (show.cover_key) {
     const v = show.cover_updated_at ? Date.parse(show.cover_updated_at) || 0 : 0;
-    return html`<img class="cover cover-${size}" src="/shows/${show.slug}/cover?v=${v}" alt="" width="${size === 'lg' ? 64 : 40}" height="${size === 'lg' ? 64 : 40}">`;
+    return html`<img class="cover cover-${size}" src="/shows/${show.slug}/cover?v=${v}" alt="" width="${size === 'lg' ? 56 : 36}" height="${size === 'lg' ? 56 : 36}">`;
   }
   return html`<span class="cover cover-${size} cover-letter" aria-hidden="true">${[...show.name.trim()][0]?.toUpperCase() ?? '?'}</span>`;
 }
