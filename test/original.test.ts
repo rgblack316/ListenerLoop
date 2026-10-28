@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hash } from '@node-rs/argon2';
 import type { Show } from '../src/db/repo.js';
-import { login, makeHarness, type Harness } from './helpers.js';
+import { formPost, login, makeHarness, type Harness } from './helpers.js';
 
 describe('original vs processed audio', () => {
   let h: Harness;
@@ -86,5 +86,23 @@ describe('original vs processed audio', () => {
     expect(page).toContain('Download the original');
     expect((await get(url(a, 'kept', '/audio?version=original'), owner)).statusCode).toBe(200);
     expect((await get(url(a, 'kept', '/audio'), owner)).statusCode).toBe(404);
+  });
+
+  it('deleting a message removes the original along with the MP3, and so does retention', async () => {
+    await add('gone', a, 'Gone Soon', { mime: 'audio/webm', body: 'orig-bytes' });
+    expect(await h.ctx.storage.exists('gone.orig')).toBe(true);
+    const res = await formPost(h, url(a, 'gone', '/delete'), owner, {});
+    expect(res.statusCode).toBe(302);
+    expect(await h.ctx.storage.exists('gone.mp3')).toBe(false);
+    expect(await h.ctx.storage.exists('gone.orig')).toBe(false);
+    expect(h.ctx.repo.getMessage('gone')).toBeUndefined();
+
+    await add('old', a, 'Old One', { mime: 'audio/webm', body: 'orig-bytes' });
+    h.ctx.repo.updateMessage('old', { created_at: '2020-01-01T00:00:00.000Z' });
+    (h.ctx.config as { retentionDays: number }).retentionDays = 30;
+    const { purgeExpired } = await import('../src/process.js');
+    expect(await purgeExpired(h.ctx)).toBeGreaterThanOrEqual(1);
+    expect(await h.ctx.storage.exists('old.orig')).toBe(false);
+    expect(await h.ctx.storage.exists('old.mp3')).toBe(false);
   });
 });
