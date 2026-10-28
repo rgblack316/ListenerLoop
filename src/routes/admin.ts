@@ -469,27 +469,42 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     }),
   );
 
+  /** The recording as the browser sent it. Only audio and video types are passed on, so a stored value can never turn into a page. */
+  const ORIGINAL_TYPES: Record<string, string> = {
+    'audio/webm': 'webm', 'video/webm': 'webm', 'audio/ogg': 'ogg', 'video/ogg': 'ogg', 'audio/mp4': 'm4a', 'video/mp4': 'm4a', 'audio/x-m4a': 'm4a',
+    'audio/aac': 'aac', 'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/wave': 'wav', 'audio/3gpp': '3gp', 'audio/flac': 'flac',
+  };
+  const originalKind = (mime: string | null): { type: string; ext: string } => {
+    const base = (mime ?? '').split(';')[0]!.trim().toLowerCase();
+    return ORIGINAL_TYPES[base] ? { type: base, ext: ORIGINAL_TYPES[base]! } : { type: 'application/octet-stream', ext: 'bin' };
+  };
+
   app.get(
     '/shows/:slug/messages/:id/audio',
     authed(async (req, reply, session) => {
       const m = messageFor(req, session);
-      if (!m || m.status !== 'ready' || !m.mp3_key) return reply.code(404).type('text/plain').send('Not found');
-      const download = (req.query as { download?: string }).download === '1';
-      const filename = `${safeFilePart(m.show_slug)}-${safeFilePart(m.sender_name)}-${m.created_at.slice(0, 10)}.mp3`;
+      if (!m) return reply.code(404).type('text/plain').send('Not found');
+      const q = req.query as { download?: string; version?: string };
+      const original = q.version === 'original';
+      const key = original ? m.original_key : m.mp3_key;
+      if (!key || (!original && m.status !== 'ready')) return reply.code(404).type('text/plain').send('Not found');
+      const download = q.download === '1';
+      const kind = original ? originalKind(m.original_mime) : { type: 'audio/mpeg', ext: 'mp3' };
+      const filename = `${safeFilePart(m.show_slug)}-${safeFilePart(m.sender_name)}-${m.created_at.slice(0, 10)}${original ? '-original' : ''}.${kind.ext}`;
 
       if (storage.getSignedUrl) {
-        const url = await storage.getSignedUrl(m.mp3_key, 300, {
-          contentType: 'audio/mpeg',
+        const url = await storage.getSignedUrl(key, 300, {
+          contentType: kind.type,
           downloadName: download ? filename : undefined,
         });
         return reply.header('Cache-Control', 'no-store').redirect(url);
       }
 
-      const size = await storage.size(m.mp3_key);
+      const size = await storage.size(key);
       if (size === null) return reply.code(404).type('text/plain').send('Audio file is missing.');
       const range = parseRange(req.headers.range, size);
       void reply
-        .header('Content-Type', 'audio/mpeg')
+        .header('Content-Type', kind.type)
         .header('Accept-Ranges', 'bytes')
         .header('Cache-Control', 'private, no-store')
         .header('X-Content-Type-Options', 'nosniff');
@@ -500,10 +515,10 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
           .code(206)
           .header('Content-Range', `bytes ${range.start}-${range.end}/${size}`)
           .header('Content-Length', range.end - range.start + 1);
-        return reply.send(await storage.getStream(m.mp3_key, range));
+        return reply.send(await storage.getStream(key, range));
       }
       void reply.header('Content-Length', size);
-      return reply.send(await storage.getStream(m.mp3_key));
+      return reply.send(await storage.getStream(key));
     }),
   );
 

@@ -241,20 +241,31 @@ export function messagePage(m: MessageWithShow, csrf: string, role: Role, flash?
     ${flash ? html`<p class="notice" role="status">${flash}</p>` : ''}
     <section class="card">
       ${m.status === 'ready'
-        ? html`${waveformHtml(m.waveform)}<audio controls preload="metadata" src="${msgBase(m)}/audio" data-player></audio>
+        ? html`${waveformHtml(m.waveform)}<audio controls preload="metadata" src="${msgBase(m)}/audio" data-player ${m.duration_seconds ? raw(`data-duration="${m.duration_seconds}"`) : ''}></audio>
           <p class="player-tools">
+            ${m.original_key
+              ? html`<label>Version
+                  <select data-version aria-label="Which recording to play">
+                    <option value="${msgBase(m)}/audio" selected>Processed (MP3)</option>
+                    <option value="${msgBase(m)}/audio?version=original">Original recording</option>
+                  </select>
+                </label>`
+              : ''}
             <label>Speed
               <select data-speed>
                 <option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option>
                 <option value="1.5">1.5×</option><option value="2">2×</option>
               </select>
             </label>
-            <a href="${msgBase(m)}/audio?download=1">Download MP3</a>
-          </p>`
+            <a href="${msgBase(m)}/audio?download=1" data-download-link>Download MP3</a>
+          </p>
+          ${m.original_key
+            ? html`<p class="muted" data-version-note>Switching keeps your place, so you can hear the processed and original recordings side by side. The original is exactly what the listener's browser recorded, before conversion.</p>`
+            : html`<p class="muted">The original recording was not kept for this message.${role === 'owner' ? html` Turn on &ldquo;Keep the original recording&rdquo; in <a href="/shows/${m.show_slug}/settings">the show's settings</a> to keep it for new messages.` : ''}</p>`}`
         : m.status === 'failed'
           ? html`<div class="alert"><p>This message could not be processed: ${m.error ?? 'unknown error'}</p>
               ${m.original_key
-                ? html`<p>The original recording was saved. If the cause was a setting (for example a length limit), change it on the show's settings page, then retry.</p>
+                ? html`<p>The original recording was saved. If the cause was a setting (for example a length limit), change it on the show's settings page, then retry. <a href="${msgBase(m)}/audio?version=original&download=1">Download the original</a>.</p>
                   ${edit ? html`<form method="post" action="${msgBase(m)}/retry">${csrfField(csrf)}<button class="btn">Retry processing</button></form>` : ''}`
                 : html`<p>The original recording was not saved, so it cannot be retried.</p>`}
             </div>`

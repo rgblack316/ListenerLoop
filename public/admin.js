@@ -20,6 +20,29 @@
     player.addEventListener('play', function () { player.playbackRate = Number(speed.value); });
   }
 
+  // Processed / original: switch the recording but keep the place, speed and play state, so the two can be compared.
+  var version = document.querySelector('[data-version]');
+  var dlLink = document.querySelector('[data-download-link]');
+  if (version && player) {
+    version.addEventListener('change', function () {
+      var at = player.currentTime;
+      var wasPlaying = !player.paused;
+      var original = version.selectedIndex === 1;
+      player.src = version.value;
+      player.load();
+      player.addEventListener('loadedmetadata', function restore() {
+        player.removeEventListener('loadedmetadata', restore);
+        try { player.currentTime = at; } catch (e) { /* not seekable yet */ }
+        if (speed) player.playbackRate = Number(speed.value);
+        if (wasPlaying) { var p = player.play(); if (p && p.catch) p.catch(function () {}); }
+      });
+      if (dlLink) {
+        dlLink.href = version.value + (original ? '&' : '?') + 'download=1';
+        dlLink.textContent = original ? 'Download original' : 'Download MP3';
+      }
+    });
+  }
+
   // Waveform: draw the stored peaks, show progress, and seek on click or drag.
   var wave = document.querySelector('[data-wave]');
   if (wave && player) {
@@ -39,14 +62,20 @@
       return r;
     });
     wave.appendChild(svg);
-    var paint = function () {
+    var length = function () {
       var d = player.duration;
+      if (d && isFinite(d)) return d;
+      var known = Number(player.getAttribute('data-duration'));
+      return known > 0 ? known : 0;
+    };
+    var paint = function () {
+      var d = length();
       var upto = d && isFinite(d) ? Math.round((player.currentTime / d) * bars.length) : 0;
       bars.forEach(function (r, i) { r.setAttribute('class', i < upto ? 'played' : ''); });
     };
     var seek = function (e) {
-      var d = player.duration;
-      if (!d || !isFinite(d)) return;
+      var d = length();
+      if (!d) return;
       var box = wave.getBoundingClientRect();
       player.currentTime = Math.min(1, Math.max(0, (e.clientX - box.left) / box.width)) * d;
       paint();
