@@ -102,7 +102,7 @@ Site owners paste one line; everything else lives on the tool's own domain.
 
 ## Data model
 
-Five tables for v1, plus `schema_migrations`. IDs are ULIDs; timestamps are UTC.
+Core tables: shows, messages, replies, users, user_shows, invites, recovery_codes, sessions, webhooks, webhook_deliveries, backups and settings, plus `schema_migrations` (13 migrations so far). IDs are ULIDs; timestamps are UTC.
 
 | Table | Key fields |
 | --- | --- |
@@ -150,7 +150,9 @@ The admin is server-rendered, so there is no JSON admin API. Pages and form post
 | `GET /shows/:slug/messages/:id/audio` | Local driver: streamed with HTTP Range. S3 driver: redirect to a signed URL that expires in 5 minutes. Add `?download=1` to download. |
 | `POST /shows/:slug/messages/:id/retry` | Re-run a failed message from its saved original (after fixing the cause, such as raising the show's length limit). |
 | `POST /shows/:slug/messages/:id/resend-alert` | Send the email alert again after a failure. |
-| `GET /settings` | Settings page: email test, storage check, read-only configuration. |
+| `GET /settings` | Owner only: email test, storage check, backups (run, schedule, download, restore, import), read-only configuration. |
+| `POST /settings/backups/*` | Owner only: run, schedule, delete, download, restore, upload and scan for backups. |
+| `GET /shows/:slug/messages/:id/audio?version=original` | Everyone with access to the show: the kept original recording. |
 | `GET /users`, `GET /users/:id` | Owner only: manage users, invitations and reset links. |
 | `GET /shows/:slug/webhooks` | Owner only: webhooks for a show. |
 | `GET /inbox/export.csv`, `/shows/:slug/export.json` | Everyone: export visible messages (CSV or JSON). |
@@ -192,7 +194,7 @@ Server-rendered pages, with htmx for small live updates such as starring or arch
 - **Inbox:** one inbox per show and a combined view; filter by new, starred, archived, failed; newest first; unread indicator; the sender's name appears on every row so you know who left a message before you play it.
 - **Message view:** audio player with speed control, sender details, duration, date, private notes, star, archive, delete, download MP3.
 - **Shows:** create and edit shows, copy the embed snippet, rotate the site key, edit allowed origins and widget text and color, optional per-show Turnstile key.
-- **Settings:** a test-email button, a storage check (write, read, delete a test file), and a read-only view of the configuration. Configuration itself stays in `.env`.
+- **Settings (owner only):** a test-email button, a storage check (write, read, delete a test file), backups with restore and import, and a read-only view of the configuration. Configuration itself stays in `.env`.
 - **Admin accounts:** the first owner is created from the command line (`create-admin`); there is no setup screen. Owners add others by invitation.
 
 **Planned**

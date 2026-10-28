@@ -152,7 +152,7 @@ To restore on the same server, run `restore.sh` with the archive. It asks for co
 1. **MVP (built):** recorder, upload, MP3 conversion, storage drivers, admin inbox, email alert.
 2. **Hardening (done):** abuse limits, retention, settings, live preview, backups, in-app browser check (Facebook tested, Instagram assumed).
 3. **Quality of life (built):** search, bulk download, waveforms, optional transcription, loudness normalization.
-4. **Built:** reply to listeners by email, cover art, multi-user admin with per-show access, webhooks and CSV/JSON export.
+4. **Built:** reply to listeners by email, cover art, multi-user admin with per-show access, webhooks, CSV/JSON export, in-app backups with restore and import, and original-vs-processed audio playback.
 
 Details and acceptance criteria are in [PLAN.md](PLAN.md).
 
