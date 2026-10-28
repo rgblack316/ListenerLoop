@@ -108,9 +108,16 @@ Core tables: shows, messages, replies, users, user_shows, invites, recovery_code
 | --- | --- |
 | `shows` | id, name, slug, site_key (public), allowed_origins (list), notify_email, max_seconds, ask_email, consent_text, button_label, accent_color, prompt_text, thanks_text, retain_original, transcribe, normalize_loudness, noise_reduction, created_at |
 | `messages` | id, show_id, status (`processing`, `ready`, `failed`), starred, archived, sender_name (required), sender_email (optional), consent_given, duration_seconds, mp3_key, original_key, size_bytes, original_mime, ip_hash, user_agent, transcript (nullable, unused so far), notes, error, email_error, read_at, created_at, deleted_at |
-| `admin` | id, email, password_hash (argon2id), created_at (single row in v1; becomes `users` with roles later) |
-| `sessions` | token_hash (sha256 of the cookie token), admin_id, created_at, expires_at |
-| `settings` | key, value (reserved for settings edited in admin; unused so far, settings come from environment variables) |
+| `users` | id, email, name, password_hash (argon2id), role (`owner`, `editor`, `viewer`), disabled_at, totp_secret, totp_enabled, totp_last_step, last_login_at |
+| `user_shows` | user_id, show_id (which shows a non-owner can open) |
+| `invites` | token_hash, kind (`invite`, `reset`), email, role, show_ids, user_id, expires_at, used_at |
+| `recovery_codes` | user_id, code_hash, used_at (two-step sign-in) |
+| `sessions` | token_hash (sha256 of the cookie token), user_id, created_at, expires_at |
+| `replies` | id, message_id, to_email, subject, body, status, error |
+| `webhooks` | id, show_id, url, secret, events, enabled |
+| `webhook_deliveries` | id, webhook_id, event, payload, status, attempts, next_attempt_at, response_code, error |
+| `backups` | id, kind, status, file, size_bytes, includes_audio, has_local, storage_key, error, started_by |
+| `settings` | key, value (backup schedule, last restore and similar; most configuration still comes from environment variables) |
 
 **Notes**
 
