@@ -368,6 +368,8 @@ export interface ShowFormValues {
   ask_email: boolean;
   consent_text: string;
   button_label: string;
+  embed_blurb: string;
+  embed_style: string;
   accent_color: string;
   prompt_text: string;
   thanks_text: string;
@@ -424,6 +426,14 @@ export function showFormPage(opts: {
       </label>
       <label>Maximum message length (seconds)<input type="number" name="max_seconds" value="${v.max_seconds}" min="5" max="${opts.maxSecondsLimit}" required></label>
       <label>Button label<input name="button_label" value="${v.button_label}" maxlength="60"></label>
+      <label>Website embed style
+        <select name="embed_style">
+          <option value="card" ${v.embed_style !== 'button' ? raw('selected') : ''}>Card: message, button and "Powered by ListenerLoop"</option>
+          <option value="button" ${v.embed_style === 'button' ? raw('selected') : ''}>Button only</option>
+        </select>
+      </label>
+      <label>Embed message<textarea name="embed_blurb" rows="2" maxlength="240" placeholder="Have a question, a comment or a story to share? Record a voicemail right from your browser. It may be played on the show.">${v.embed_blurb}</textarea>
+        <small>Shown above the button on your website. Leave empty for the default.</small></label>
       <label>Prompt text<input name="prompt_text" value="${v.prompt_text}" maxlength="300"></label>
       <label>Thank-you message<input name="thanks_text" value="${v.thanks_text}" maxlength="300"></label>
       <label>Consent notice<textarea name="consent_text" rows="2" maxlength="500">${v.consent_text}</textarea>

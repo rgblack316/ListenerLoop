@@ -89,6 +89,10 @@ export interface Show {
   ask_email: number;
   consent_text: string;
   button_label: string;
+  /** Short text shown above the embed button; null = the built-in default. */
+  embed_blurb: string | null;
+  /** 'card' (message, button, branding) or 'button' (the button alone). */
+  embed_style: string;
   accent_color: string;
   prompt_text: string;
   thanks_text: string;
@@ -248,6 +252,8 @@ export class Repo {
       ask_email: input.ask_email ?? 1,
       consent_text: input.consent_text ?? 'By sending this message you agree that it may be played on the show.',
       button_label: input.button_label ?? 'Leave a voicemail',
+      embed_blurb: input.embed_blurb ?? null,
+      embed_style: input.embed_style ?? 'card',
       accent_color: input.accent_color ?? '#21649E',
       prompt_text: input.prompt_text ?? 'Record a message for the show.',
       thanks_text: input.thanks_text ?? 'Thank you! Your message was sent.',
@@ -264,9 +270,9 @@ export class Repo {
     this.db
       .prepare(
         `INSERT INTO shows (id, name, slug, site_key, allowed_origins, notify_email, max_seconds, ask_email, consent_text,
-          button_label, accent_color, prompt_text, thanks_text, retain_original, transcribe, normalize_loudness, noise_reduction, feed_url, created_at)
+          button_label, embed_blurb, embed_style, accent_color, prompt_text, thanks_text, retain_original, transcribe, normalize_loudness, noise_reduction, feed_url, created_at)
          VALUES (@id, @name, @slug, @site_key, @allowed_origins, @notify_email, @max_seconds, @ask_email, @consent_text,
-          @button_label, @accent_color, @prompt_text, @thanks_text, @retain_original, @transcribe, @normalize_loudness, @noise_reduction, @feed_url, @created_at)`,
+          @button_label, @embed_blurb, @embed_style, @accent_color, @prompt_text, @thanks_text, @retain_original, @transcribe, @normalize_loudness, @noise_reduction, @feed_url, @created_at)`,
       )
       .run(show);
     return show;

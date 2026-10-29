@@ -98,7 +98,7 @@ describe('original vs processed audio', () => {
     expect(h.ctx.repo.getMessage('gone')).toBeUndefined();
 
     await add('old', a, 'Old One', { mime: 'audio/webm', body: 'orig-bytes' });
-    h.ctx.repo.updateMessage('old', { created_at: '2020-01-01T00:00:00.000Z' });
+    h.ctx.repo.db.prepare('UPDATE messages SET created_at = ? WHERE id = ?').run('2020-01-01T00:00:00.000Z', 'old');
     (h.ctx.config as { retentionDays: number }).retentionDays = 30;
     const { purgeExpired } = await import('../src/process.js');
     expect(await purgeExpired(h.ctx)).toBeGreaterThanOrEqual(1);

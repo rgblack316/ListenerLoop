@@ -203,6 +203,31 @@ describe('admin: shows', () => {
     expect(cfg.json().turnstileSiteKey).toBe(h.config.turnstile.siteKey);
   });
 
+  it('saves the embed style and message and exposes them in the public config', async () => {
+    const base = { name: 'Randy Unscripted', slug: show.slug, notify_email: 'randy@example.com', max_seconds: '180', accent_color: '#112233', ask_email: '1' };
+    const def = await h.app.inject({ method: 'GET', url: `/api/public/config?key=${show.site_key}` });
+    expect(def.json().show.embedStyle).toBe('card');
+    expect(def.json().show.blurb).toBe('');
+
+    const res = await formPost(h, `/shows/${show.slug}/settings`, session, { ...base, embed_style: 'button', embed_blurb: 'Call us <b>anytime</b>' });
+    expect(res.statusCode).toBe(302);
+    const cfg = (await h.app.inject({ method: 'GET', url: `/api/public/config?key=${show.site_key}` })).json().show;
+    expect(cfg.embedStyle).toBe('button');
+    expect(cfg.blurb).toContain('Call us');
+
+    await formPost(h, `/shows/${show.slug}/settings`, session, { ...base, embed_style: 'bogus', embed_blurb: 'x'.repeat(400) });
+    const after = h.ctx.repo.getShow(show.id)!;
+    expect(after.embed_style).toBe('card');
+    expect(after.embed_blurb!.length).toBeLessThanOrEqual(240);
+  });
+
+  it('serves an embed script that styles through the CSSOM only', async () => {
+    const js = (await h.app.inject({ method: 'GET', url: '/embed.js' })).body;
+    expect(js).toContain('attachShadow');
+    expect(js).toContain('Powered by');
+    expect(js).not.toMatch(/\.cssText\s*=|setAttribute\(\s*['"]style/);
+  });
+
   it('refuses duplicate slugs', async () => {
 
     h.ctx.repo.createShow({ name: 'Other Show' });

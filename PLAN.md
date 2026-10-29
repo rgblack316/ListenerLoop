@@ -106,7 +106,7 @@ Core tables: shows, messages, replies, users, user_shows, invites, recovery_code
 
 | Table | Key fields |
 | --- | --- |
-| `shows` | id, name, slug, site_key (public), allowed_origins (list), notify_email, max_seconds, ask_email, consent_text, button_label, accent_color, prompt_text, thanks_text, retain_original, transcribe, normalize_loudness, noise_reduction, created_at |
+| `shows` | id, name, slug, site_key (public), allowed_origins (list), notify_email, max_seconds, ask_email, consent_text, button_label, embed_blurb, embed_style, accent_color, prompt_text, thanks_text, retain_original, transcribe, normalize_loudness, noise_reduction, created_at |
 | `messages` | id, show_id, status (`processing`, `ready`, `failed`), starred, archived, sender_name (required), sender_email (optional), consent_given, duration_seconds, mp3_key, original_key, size_bytes, original_mime, ip_hash, user_agent, transcript (nullable, unused so far), notes, error, email_error, read_at, created_at, deleted_at |
 | `users` | id, email, name, password_hash (argon2id), role (`owner`, `editor`, `viewer`), disabled_at, totp_secret, totp_enabled, totp_last_step, last_login_at |
 | `user_shows` | user_id, show_id (which shows a non-owner can open) |

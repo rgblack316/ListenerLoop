@@ -284,6 +284,12 @@ export const MIGRATIONS: Migration[] = [
     name: 'backup destinations',
     sql: `ALTER TABLE backups ADD COLUMN has_local INTEGER NOT NULL DEFAULT 1;`,
   },
+  {
+    id: 14,
+    name: 'embed card',
+    sql: `ALTER TABLE shows ADD COLUMN embed_blurb TEXT;
+      ALTER TABLE shows ADD COLUMN embed_style TEXT NOT NULL DEFAULT 'card';`,
+  },
 ];
 
 export function migrate(db: DB): void {

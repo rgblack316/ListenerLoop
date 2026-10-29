@@ -83,6 +83,8 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: AppContext, stat
       show: {
         name: show.name,
         buttonLabel: show.button_label,
+        blurb: show.embed_blurb ?? '',
+        embedStyle: show.embed_style === 'button' ? 'button' : 'card',
         accentColor: HEX_COLOR.test(show.accent_color) ? show.accent_color : '#21649E',
         promptText: show.prompt_text,
         thanksText: show.thanks_text,
