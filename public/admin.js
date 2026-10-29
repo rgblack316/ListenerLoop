@@ -1,6 +1,10 @@
 /* Small progressive enhancements for the admin. htmx handles the live updates. */
 (function () {
   'use strict';
+  // Only same-site paths (like /messages/1/audio) may be used as a media or download address.
+  function sitePath(v) {
+    return typeof v === 'string' && /^\/(?!\/)[\w\-./?=&%]*$/.test(v) ? v : '';
+  }
 
   function localizeTimes(root) {
     (root || document).querySelectorAll('time[data-local]').forEach(function (t) {
@@ -28,7 +32,9 @@
       var at = player.currentTime;
       var wasPlaying = !player.paused;
       var original = version.selectedIndex === 1;
-      player.src = version.value;
+      var target = sitePath(version.value);
+      if (!target) return;
+      player.src = target;
       player.load();
       player.addEventListener('loadedmetadata', function restore() {
         player.removeEventListener('loadedmetadata', restore);
@@ -37,7 +43,7 @@
         if (wasPlaying) { var p = player.play(); if (p && p.catch) p.catch(function () {}); }
       });
       if (dlLink) {
-        dlLink.href = version.value + (original ? '&' : '?') + 'download=1';
+        dlLink.href = target + (original ? '&' : '?') + 'download=1';
         dlLink.textContent = original ? 'Download original' : 'Download MP3';
       }
     });

@@ -6,7 +6,7 @@ import { ADMIN_EMAIL, APP_URL, formPost, login, makeHarness, type Harness } from
 
 const PW = 'a long enough password';
 const linkIn = (text: string, kind: 'invite' | 'reset'): string => {
-  const m = new RegExp(`${APP_URL.replace(/[.]/g, '\\.')}/${kind}/([A-Za-z0-9_-]+)`).exec(text);
+  const m = new RegExp(`${APP_URL.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}/${kind}/([A-Za-z0-9_-]+)`).exec(text);
   if (!m) throw new Error(`no ${kind} link in: ${text.slice(0, 200)}`);
   return `/${kind}/${m[1]}`;
 };

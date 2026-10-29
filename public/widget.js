@@ -1,6 +1,10 @@
 /* ListenerLoop recorder widget. Runs inside the iframe opened by embed.js. */
 (function () {
   'use strict';
+  // Playback only ever uses a local blob: address made from the recording.
+  function blobUrl(v) {
+    return typeof v === 'string' && v.indexOf('blob:') === 0 ? v : '';
+  }
 
   var hosted = document.documentElement.hasAttribute('data-hosted');
   var key = new URLSearchParams(location.search).get('key') || document.documentElement.getAttribute('data-key') || '';
@@ -150,7 +154,7 @@
     blob = new Blob(chunks, { type: mime });
     if (objectUrl) URL.revokeObjectURL(objectUrl);
     objectUrl = URL.createObjectURL(blob);
-    el.playback.src = objectUrl;
+    el.playback.src = blobUrl(objectUrl);
     el.playback.hidden = false;
     el.btnRedo.hidden = false;
     el.timer.textContent = fmt(Math.min(seconds, cfg.maxSeconds));
@@ -208,7 +212,7 @@
     mime = file.type || '';
     if (objectUrl) URL.revokeObjectURL(objectUrl);
     objectUrl = url;
-    el.playback.src = objectUrl;
+    el.playback.src = blobUrl(objectUrl);
     el.playback.hidden = false;
     el.btnRecord.hidden = true;
     el.btnRedo.hidden = false;

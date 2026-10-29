@@ -161,11 +161,11 @@ export async function safeGet(rawUrl: string, opts: SafeGetOptions): Promise<Saf
 const decodeXml = (s: string): string =>
   s
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-    .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&apos;|&#39;/g, "'")
+    .replace(/&amp;/g, '&') // last, so "&amp;lt;" becomes "&lt;" and not "<"
     .trim();
 
 /** The channel's cover art address: the iTunes image first, then the plain RSS image. Ignores anything inside an episode. */

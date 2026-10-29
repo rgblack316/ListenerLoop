@@ -1,3 +1,4 @@
+import rateLimit from '@fastify/rate-limit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -52,6 +53,8 @@ export async function buildApp(opts: BuildOptions): Promise<{ app: FastifyInstan
     log: app.log,
   };
 
+  // Broad per-IP ceiling for every route; sign-in and uploads have tighter limits of their own.
+  await app.register(rateLimit, { global: true, max: 600, timeWindow: '1 minute' });
   await app.register(cookie);
   await app.register(formbody);
   await app.register(multipart, {

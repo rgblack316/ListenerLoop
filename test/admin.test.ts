@@ -45,7 +45,7 @@ describe('admin: access control', () => {
     expect(res.headers['content-security-policy']).toContain("script-src 'self'");
     expect(res.headers['x-frame-options']).toBe('DENY');
     expect(res.headers['cache-control']).toBe('no-store');
-    expect(res.body).not.toMatch(/<script>|onclick=|onsubmit=|style=/);
+    for (const bad of ['<script>', 'onclick=', 'onsubmit=', 'style=']) expect(res.body.includes(bad)).toBe(false);
   });
 
   it('rejects wrong credentials the same way for a wrong email or password', async () => {
