@@ -133,7 +133,7 @@ To restore on the same server, run `restore.sh` with the archive. It asks for co
 - Upload-a-file fallback when the microphone is blocked, and a hosted recorder page for each show at `/s/<slug>` for newsletters and social bios.
 - Admin: sign in, per-show and combined inboxes, playback with speed control and download, star, archive, delete, private notes, search (name, email, notes, transcripts), optional on-server transcription, a waveform you can click to seek, bulk download of selected messages as a zip (MP3s, transcripts and a CSV index), optional per-show noise reduction and volume levelling (-19 LUFS, the mono podcast standard), cover art from the show's RSS feed, replies to listeners by email, and an email alert for each new message.
 
-**Not built yet:** multiple users, webhooks. See the roadmap.
+**Not built yet:** see the roadmap for ideas still open (webhook formats for Slack, Discord and ntfy, a Retry button for failed webhooks).
 
 ## Stack
 
@@ -154,7 +154,7 @@ To restore on the same server, run `restore.sh` with the archive. It asks for co
 1. **MVP (built):** recorder, upload, MP3 conversion, storage drivers, admin inbox, email alert.
 2. **Hardening (done):** abuse limits, retention, settings, live preview, backups, in-app browser check (Facebook tested, Instagram assumed).
 3. **Quality of life (built):** search, bulk download, waveforms, optional transcription, loudness normalization.
-4. **Built:** reply to listeners by email, cover art, multi-user admin with per-show access, webhooks, CSV/JSON export, in-app backups with restore and import, and original-vs-processed audio playback.
+4. **Built:** reply to listeners by email, cover art, multi-user admin with per-show access, webhooks, CSV/JSON export, in-app backups with restore and import, and original-vs-processed audio playback, and a restyled website embed with a live preview.
 
 Details and acceptance criteria are in [PLAN.md](PLAN.md).
 

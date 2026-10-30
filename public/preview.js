@@ -19,6 +19,10 @@
   function apply(v) {
     var label = v.buttonLabel || 'Leave a voicemail';
     $('pv-button').textContent = label;
+    var card = v.embedStyle !== 'button';
+    $('pv-embed').classList.toggle('is-card', card);
+    $('pv-embed-title').textContent = v.showName ? 'Leave a message for ' + v.showName : 'Leave us a message';
+    $('pv-embed-blurb').textContent = (v.embedBlurb || '').trim() || 'Have a question, a comment or a story to share? Record a voicemail right from your browser. It may be played on the show.';
     $('pv-title').textContent = label;
     $('pv-prompt').textContent = v.promptText || '';
     var seconds = parseInt(v.maxSeconds, 10);

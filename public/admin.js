@@ -151,6 +151,7 @@
       var values = {
         buttonLabel: f.button_label.value, promptText: f.prompt_text.value, maxSeconds: f.max_seconds.value,
         askEmail: f.ask_email.checked, consentText: f.consent_text.value, thanksText: f.thanks_text.value, accentColor: f.accent_color.value,
+        showName: f.name.value, embedStyle: f.embed_style.value, embedBlurb: f.embed_blurb.value,
       };
       if (previewFrame.contentWindow) previewFrame.contentWindow.postMessage({ source: 'listenerloop-admin', values: values }, location.origin);
     };
