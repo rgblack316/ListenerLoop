@@ -38,7 +38,7 @@ async function main(): Promise<void> {
   if (!ctx.mailer) {
     app.log.warn('No mail provider is configured (MAIL_PROVIDER, SMTP_HOST or RESEND_API_KEY, MAIL_FROM). Email alerts are off.');
   }
-  if (!ctx.repo.hasOwner()) {
+  if (!ctx.repo.hasSiteAdmin()) {
     app.log.warn('No admin account yet. Create one with: node dist/cli.js create-admin you@example.com');
   }
 

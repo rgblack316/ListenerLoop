@@ -55,10 +55,10 @@ describe('multi-user admin', () => {
   afterAll(async () => h.close());
 
   it('migrated the single admin to an owner and keeps CLI semantics', () => {
-    const o = h.ctx.repo.firstOwner();
+    const o = h.ctx.repo.firstSiteAdmin();
     expect(o?.email).toBe(ADMIN_EMAIL);
-    expect(o?.role).toBe('owner');
-    expect(h.ctx.repo.hasOwner()).toBe(true);
+    expect(o?.role).toBe('site_admin');
+    expect(h.ctx.repo.hasSiteAdmin()).toBe(true);
   });
 
   it('an editor only sees and changes the shows they were given', async () => {
@@ -76,7 +76,7 @@ describe('multi-user admin', () => {
       expect((await get(url, ed)).statusCode, url).toBe(403);
     }
     expect((await formPost(h, `/shows/${a.slug}/rotate-key`, ed, {})).statusCode).toBe(403);
-    expect((await formPost(h, '/users/invite', ed, { email: 'x@example.com', role: 'owner' })).statusCode).toBe(403);
+    expect((await formPost(h, '/users/invite', ed, { email: 'x@example.com', role: 'site_admin' })).statusCode).toBe(403);
     const nav = (await get('/inbox', ed)).body;
     expect(nav).not.toContain('href="/users"');
     expect(nav).not.toContain('href="/settings"');
@@ -132,12 +132,12 @@ describe('multi-user admin', () => {
   });
 
   it('protects the last owner', async () => {
-    const me = h.ctx.repo.firstOwner()!;
+    const me = h.ctx.repo.firstSiteAdmin()!;
     const demote = await formPost(h, `/users/${me.id}`, owner, { role: 'viewer', name: '' });
     expect(demote.statusCode).toBe(400);
     expect((await formPost(h, `/users/${me.id}/disable`, owner, {})).statusCode).toBe(400);
     expect((await formPost(h, `/users/${me.id}/delete`, owner, {})).statusCode).toBe(400);
-    expect(h.ctx.repo.getUser(me.id)!.role).toBe('owner');
+    expect(h.ctx.repo.getUser(me.id)!.role).toBe('site_admin');
   });
 
   it('disabling a user signs them out at once; enabling lets them back in', async () => {
@@ -254,7 +254,7 @@ describe('multi-user admin', () => {
     const { migrate } = await import('../src/db/index.js');
     migrate(raw);
     const users = raw.prepare('SELECT email, role FROM users').all();
-    expect(users).toEqual([{ email: 'old@x.com', role: 'owner' }]);
+    expect(users).toEqual([{ email: 'old@x.com', role: 'site_admin' }]);
     expect(raw.prepare("SELECT name FROM sqlite_master WHERE name = 'admin'").all()).toEqual([]);
     raw.close();
     db.close();

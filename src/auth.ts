@@ -15,8 +15,10 @@ export interface AdminSession {
   csrf: string;
 }
 
-export const isOwner = (s: AdminSession): boolean => s.role === 'owner';
-/** Owners and editors may change messages; viewers are read-only. */
+export const isSiteAdmin = (s: AdminSession): boolean => s.role === 'site_admin';
+/** Everyone but viewers may change messages; viewers are read-only. */
+/** Site admins and owners may add shows and change settings (an owner only on their own shows). */
+export const canManageShows = (s: AdminSession): boolean => s.role === 'site_admin' || s.role === 'owner';
 export const canEdit = (s: AdminSession): boolean => s.role !== 'viewer';
 
 export function csrfFor(ctx: AppContext, tokenHash: string): string {

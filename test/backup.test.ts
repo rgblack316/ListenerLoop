@@ -65,7 +65,7 @@ describe('backups', () => {
     spawnSync('tar', ['-xzf', file, '-C', out]);
     const copy = new Database(path.join(out, 'snapshot', 'app.db'), { readonly: true });
     expect((copy.prepare('SELECT COUNT(*) AS n FROM shows').get() as { n: number }).n).toBe(1);
-    expect((copy.prepare("SELECT role FROM users WHERE role = 'owner'").get() as { role: string }).role).toBe('owner');
+    expect((copy.prepare("SELECT role FROM users WHERE role = 'site_admin'").get() as { role: string }).role).toBe('site_admin');
     copy.close();
     fs.rmSync(out, { recursive: true, force: true });
     expect(fs.readdirSync(path.dirname(file)).some((f) => f.endsWith('.part'))).toBe(false);

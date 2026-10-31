@@ -6,15 +6,18 @@ import type { AppContext } from '../context.js';
 import { ROLES, type Role, type Show } from '../db/repo.js';
 import { isValidEmail, randomToken, sha256hex } from '../lib/util.js';
 import { hashRecoveryCode, newRecoveryCodes, newSecret, otpauthUrl, verifyTotp } from '../totp.js';
-import { acceptPage, accountPage, linkProblemPage, userPage, usersPage, type Notice } from '../views/users.js';
+import { acceptPage, accountPage, linkProblemPage, ROLE_LABELS, userPage, usersPage, type Notice } from '../views/users.js';
 
 type Handler = (req: FastifyRequest, reply: FastifyReply, session: AdminSession) => unknown;
 
 export interface RouteKit {
   authed: (h: Handler) => (req: FastifyRequest, reply: FastifyReply) => unknown;
   mutating: (h: Handler) => (req: FastifyRequest, reply: FastifyReply) => unknown;
-  ownerAuthed: (h: Handler) => (req: FastifyRequest, reply: FastifyReply) => unknown;
-  ownerMutating: (h: Handler) => (req: FastifyRequest, reply: FastifyReply) => unknown;
+  siteAdminAuthed: (h: Handler) => (req: FastifyRequest, reply: FastifyReply) => unknown;
+  siteAdminMutating: (h: Handler) => (req: FastifyRequest, reply: FastifyReply) => unknown;
+  /** Site admins and show admins. */
+  manageAuthed: (h: Handler) => (req: FastifyRequest, reply: FastifyReply) => unknown;
+  manageMutating: (h: Handler) => (req: FastifyRequest, reply: FastifyReply) => unknown;
   page: (reply: FastifyReply, body: string, status?: number) => FastifyReply;
   sameOrigin: (req: FastifyRequest) => boolean;
   field: (body: unknown, name: string) => string;
@@ -30,38 +33,56 @@ const MIN_PASSWORD = 12;
 
 export function registerUserRoutes(app: FastifyInstance, ctx: AppContext, kit: RouteKit): void {
   const { repo, config } = ctx;
-  const { ownerAuthed, ownerMutating, authed, mutating, page, sameOrigin, field, notFound } = kit;
+  const { manageAuthed, manageMutating, authed, mutating, page, sameOrigin, field, notFound } = kit;
   const pwThrottle = new LoginThrottle();
   const linkThrottle = new LoginThrottle();
 
-  const shownIds = (body: unknown): string[] => {
+  // Site admins manage everyone. Owners manage only editors and viewers whose shows are all
+  // among the owner's own shows, and can only hand out those shows.
+  const myShows = (session: AdminSession): Show[] => kit.accessibleShows(session);
+  const siteAdmin = (session: AdminSession): boolean => session.role === 'site_admin';
+  const shownIds = (body: unknown, session: AdminSession): string[] => {
     const raw = (body as Record<string, unknown> | undefined)?.shows;
     const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [];
-    const valid = new Set(repo.listShows().map((s) => s.id));
+    const valid = new Set(myShows(session).map((s) => s.id));
     return [...new Set(list.filter((v): v is string => typeof v === 'string' && valid.has(v)))];
   };
-  const roleOf = (v: string): Role | null => (ROLES.includes(v as Role) ? (v as Role) : null);
+  const grantable = (session: AdminSession): Role[] => (siteAdmin(session) ? ROLES : ['editor', 'viewer']);
+  const roleOf = (v: string, session: AdminSession): Role | null => (grantable(session).includes(v as Role) ? (v as Role) : null);
+  const canManageUser = (session: AdminSession, u: { id: string; role: Role }): boolean => {
+    if (siteAdmin(session)) return true;
+    if (u.id === session.userId || (u.role !== 'editor' && u.role !== 'viewer')) return false;
+    const ids = repo.userShowIds(u.id);
+    const mine = new Set(myShows(session).map((s) => s.id));
+    return ids.length > 0 && ids.every((id) => mine.has(id));
+  };
+  const needShow = 'Choose at least one of your shows for them.';
 
   const usersView = (session: AdminSession, notice?: Notice): string =>
     usersPage({
       csrf: session.csrf,
-      users: repo.listUsers().map((u) => ({ ...u, showNames: repo.listShows().filter((s) => repo.userShowIds(u.id).includes(s.id)).map((s) => s.name) })),
-      invites: repo.pendingInvites(),
-      shows: repo.listShows(),
+      viewer: session.role,
+      users: repo
+        .listUsers()
+        .filter((u) => canManageUser(session, u))
+        .map((u) => ({ ...u, showNames: repo.listShows().filter((s) => repo.userShowIds(u.id).includes(s.id)).map((s) => s.name) })),
+      invites: repo.pendingInvites().filter((i) => siteAdmin(session) || i.created_by === session.userId),
+      shows: myShows(session),
       mailOn: !!ctx.mailer,
       notice,
     });
 
   const userView = (session: AdminSession, id: string, notice?: Notice): string | null => {
     const user = repo.getUser(id);
-    if (!user) return null;
+    if (!user || !canManageUser(session, user)) return null;
     return userPage({
       csrf: session.csrf,
+      viewer: session.role,
       user,
-      shows: repo.listShows(),
+      shows: myShows(session),
       picked: new Set(repo.userShowIds(id)),
       self: user.id === session.userId,
-      lastOwner: user.role === 'owner' && !user.disabled_at && repo.countActiveOwners() <= 1,
+      lastSiteAdmin: user.role === 'site_admin' && !user.disabled_at && repo.countActiveSiteAdmins() <= 1,
       notice,
     });
   };
@@ -88,33 +109,35 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext, kit: R
     const sent = await mailLink(
       email,
       'You are invited to ListenerLoop',
-      `${who} invited you to ListenerLoop as ${role === 'owner' ? 'an' : 'a'} ${role}.\n\nChoose your password here (the link works for 7 days):\n${link}\n`,
+      `${who} invited you to ListenerLoop as ${/^[aeiou]/i.test(ROLE_LABELS[role]) ? 'an' : 'a'} ${ROLE_LABELS[role]}.\n\nChoose your password here (the link works for 7 days):\n${link}\n`,
     );
     return sent
       ? { ok: true, message: `Invitation emailed to ${email}.` }
       : { ok: true, message: ctx.mailer ? `The email to ${email} could not be sent. Share this link with them yourself:` : `Email is not set up. Share this link with ${email} yourself:`, link };
   };
 
-  // ---------------------------------------------------------------- owner: users
-  app.get('/users', ownerAuthed((_req, reply, session) => page(reply, usersView(session))));
+  // ---------------------------------------------------------------- site admins and show admins: users
+  app.get('/users', manageAuthed((_req, reply, session) => page(reply, usersView(session))));
 
   app.post(
     '/users/invite',
-    ownerMutating(async (req, reply, session) => {
+    manageMutating(async (req, reply, session) => {
       const email = field(req.body, 'email').trim().toLowerCase();
-      const role = roleOf(field(req.body, 'role'));
+      const role = roleOf(field(req.body, 'role'), session);
       if (!isValidEmail(email) || !role) return page(reply, usersView(session, { ok: false, message: 'Enter a valid email and choose a role.' }), 400);
       if (repo.getUserByEmail(email)) return page(reply, usersView(session, { ok: false, message: 'That email already has an account.' }), 400);
-      const notice = await issueInvite(session, email, role, role === 'owner' ? [] : shownIds(req.body));
+      const showIds = role === 'site_admin' ? [] : shownIds(req.body, session);
+      if (role !== 'site_admin' && !siteAdmin(session) && showIds.length === 0) return page(reply, usersView(session, { ok: false, message: needShow }), 400);
+      const notice = await issueInvite(session, email, role, showIds);
       return page(reply, usersView(session, notice));
     }),
   );
 
   app.post(
     '/users/invites/:id/resend',
-    ownerMutating(async (req, reply, session) => {
+    manageMutating(async (req, reply, session) => {
       const inv = repo.getInvite((req.params as { id: string }).id);
-      if (!inv || inv.kind !== 'invite' || inv.used_at) return notFound(reply);
+      if (!inv || inv.kind !== 'invite' || inv.used_at || !(siteAdmin(session) || inv.created_by === session.userId)) return notFound(reply);
       const notice = await issueInvite(session, inv.email, (inv.role ?? 'viewer') as Role, JSON.parse(inv.show_ids) as string[]);
       return page(reply, usersView(session, notice));
     }),
@@ -122,35 +145,39 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext, kit: R
 
   app.post(
     '/users/invites/:id/revoke',
-    ownerMutating((req, reply, session) => {
-      repo.deleteInvite((req.params as { id: string }).id);
+    manageMutating((req, reply, session) => {
+      const inv = repo.getInvite((req.params as { id: string }).id);
+      if (!inv || !(siteAdmin(session) || inv.created_by === session.userId)) return notFound(reply);
+      repo.deleteInvite(inv.id);
       return page(reply, usersView(session, { ok: true, message: 'Invitation revoked.' }));
     }),
   );
 
   app.get(
     '/users/:id',
-    ownerAuthed((req, reply, session) => {
+    manageAuthed((req, reply, session) => {
       const body = userView(session, (req.params as { id: string }).id);
       return body ? page(reply, body) : notFound(reply);
     }),
   );
 
   const withUser = (fn: (user: NonNullable<ReturnType<typeof repo.getUser>>, session: AdminSession, req: FastifyRequest, reply: FastifyReply) => unknown) =>
-    ownerMutating((req, reply, session) => {
+    manageMutating((req, reply, session) => {
       const user = repo.getUser((req.params as { id: string }).id);
-      return user ? fn(user, session, req, reply) : notFound(reply);
+      return user && canManageUser(session, user) ? fn(user, session, req, reply) : notFound(reply);
     });
-  const isLastOwner = (u: { id: string; role: Role; disabled_at: string | null }): boolean => u.role === 'owner' && !u.disabled_at && repo.countActiveOwners() <= 1;
+  const isLastSiteAdmin = (u: { id: string; role: Role; disabled_at: string | null }): boolean => u.role === 'site_admin' && !u.disabled_at && repo.countActiveSiteAdmins() <= 1;
   const back = (reply: FastifyReply, session: AdminSession, id: string, notice: Notice, status = 200): FastifyReply => page(reply, userView(session, id, notice) ?? '', status);
 
   app.post(
     '/users/:id',
     withUser((user, session, req, reply) => {
-      const role = roleOf(field(req.body, 'role')) ?? user.role;
-      if (role !== 'owner' && isLastOwner(user)) return back(reply, session, user.id, { ok: false, message: 'There must always be one active owner.' }, 400);
+      const role = roleOf(field(req.body, 'role'), session) ?? user.role;
+      if (role !== 'site_admin' && isLastSiteAdmin(user)) return back(reply, session, user.id, { ok: false, message: 'There must always be one active site admin.' }, 400);
+      const showIds = shownIds(req.body, session);
+      if (!siteAdmin(session) && showIds.length === 0) return back(reply, session, user.id, { ok: false, message: needShow }, 400);
       repo.updateUser(user.id, { name: field(req.body, 'name').trim().slice(0, 80), role });
-      repo.setUserShows(user.id, shownIds(req.body));
+      repo.setUserShows(user.id, showIds);
       return back(reply, session, user.id, { ok: true, message: 'Saved.' });
     }),
   );
@@ -158,7 +185,7 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext, kit: R
   app.post(
     '/users/:id/disable',
     withUser((user, session, _req, reply) => {
-      if (user.id === session.userId || isLastOwner(user)) return back(reply, session, user.id, { ok: false, message: 'You cannot disable the only active owner or yourself.' }, 400);
+      if (user.id === session.userId || isLastSiteAdmin(user)) return back(reply, session, user.id, { ok: false, message: 'You cannot disable the only active site admin or yourself.' }, 400);
       repo.updateUser(user.id, { disabled_at: new Date().toISOString() });
       repo.deleteUserSessions(user.id);
       return back(reply, session, user.id, { ok: true, message: 'Disabled and signed out.' });
@@ -176,7 +203,7 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext, kit: R
   app.post(
     '/users/:id/delete',
     withUser((user, session, _req, reply) => {
-      if (user.id === session.userId || isLastOwner(user)) return back(reply, session, user.id, { ok: false, message: 'You cannot remove the only active owner or yourself.' }, 400);
+      if (user.id === session.userId || isLastSiteAdmin(user)) return back(reply, session, user.id, { ok: false, message: 'You cannot remove the only active site admin or yourself.' }, 400);
       repo.deleteUser(user.id);
       return page(reply, usersView(session, { ok: true, message: `${user.email} was removed.` }));
     }),
@@ -197,7 +224,7 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext, kit: R
       const token = randomToken(32);
       repo.createInvite({ kind: 'reset', email: user.email, userId: user.id, createdBy: session.userId, tokenHash: sha256hex(token), ttlMs: LINK_TTL_MS });
       const link = newLink('reset', token);
-      const sent = await mailLink(user.email, 'Reset your ListenerLoop password', `An owner made a password reset link for your ListenerLoop account (it works for 7 days):\n${link}\n`);
+      const sent = await mailLink(user.email, 'Reset your ListenerLoop password', `A ListenerLoop admin made a password reset link for your ListenerLoop account (it works for 7 days):\n${link}\n`);
       return back(reply, session, user.id, sent ? { ok: true, message: `Reset link emailed to ${user.email}. You can also share it yourself:`, link } : { ok: true, message: 'Share this reset link with them:', link });
     }),
   );

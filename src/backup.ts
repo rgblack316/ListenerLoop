@@ -163,7 +163,7 @@ async function runBackup(ctx: AppContext, id: string, kind: Backup['kind']): Pro
 }
 
 async function alertFailure(ctx: AppContext, reason: string): Promise<void> {
-  const to = ctx.repo.firstOwner()?.email;
+  const to = ctx.repo.firstSiteAdmin()?.email;
   if (!ctx.mailer || !to) return;
   await ctx.mailer
     .send({ to, subject: 'ListenerLoop: the scheduled backup failed', text: `The scheduled backup did not finish.\n\nReason: ${reason}\n\nOpen ${ctx.config.appUrl}/settings to see the details and run it again.\n` })

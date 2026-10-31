@@ -6,7 +6,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   canEdit,
   csrfValid,
-  isOwner,
+  canManageShows,
+  isSiteAdmin,
   endSession,
   getSession,
   LoginThrottle,
@@ -71,6 +72,8 @@ const field = (body: unknown, name: string): string => {
 const FLASH: Record<string, string> = {
   saved: 'Changes saved.',
   created: 'Show created. Copy the embed code below into your site.',
+  deleted: 'The show and its messages were deleted.',
+  deletefail: 'Some recordings could not be removed from storage, so the show was not deleted. Try again in a moment.',
   rotated: 'Site key rotated. Update the embed code on your site.',
   retrying: 'Retrying. This usually takes a few seconds; reload to see the result.',
   transcribing: 'Transcribing. This can take a few minutes; reload to see the result.',
@@ -141,8 +144,10 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
   const forbidden = (reply: FastifyReply): FastifyReply => reply.code(403).type('text/plain').send('You do not have permission to do that.');
   /** State-changing request that needs the editor or owner role. */
   const editing = (handler: Handler) => mutating((req, reply, session) => (canEdit(session) ? handler(req, reply, session) : forbidden(reply)));
-  const ownerAuthed = (handler: Handler) => authed((req, reply, session) => (isOwner(session) ? handler(req, reply, session) : forbidden(reply)));
-  const ownerMutating = (handler: Handler) => mutating((req, reply, session) => (isOwner(session) ? handler(req, reply, session) : forbidden(reply)));
+  const siteAdminAuthed = (handler: Handler) => authed((req, reply, session) => (isSiteAdmin(session) ? handler(req, reply, session) : forbidden(reply)));
+  const manageAuthed = (handler: Handler) => authed((req, reply, session) => (canManageShows(session) ? handler(req, reply, session) : forbidden(reply)));
+  const manageMutating = (handler: Handler) => mutating((req, reply, session) => (canManageShows(session) ? handler(req, reply, session) : forbidden(reply)));
+  const siteAdminMutating = (handler: Handler) => mutating((req, reply, session) => (isSiteAdmin(session) ? handler(req, reply, session) : forbidden(reply)));
 
   const isHtmx = (req: FastifyRequest): boolean => req.headers['hx-request'] === 'true';
 
@@ -224,7 +229,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
   // Every route below goes through this, so access is decided in exactly one place.
   const accessibleShows = (session: AdminSession): Show[] => {
     const all = repo.listShows();
-    if (isOwner(session)) return all;
+    if (isSiteAdmin(session)) return all;
     const mine = new Set(repo.userShowIds(session.userId));
     return all.filter((sh) => mine.has(sh.id));
   };
@@ -240,7 +245,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     '/',
     authed((_req, reply, session) => {
       const shows = accessibleShows(session);
-      if (shows.length === 0 && isOwner(session)) return reply.redirect('/shows/new');
+      if (shows.length === 0 && isSiteAdmin(session)) return reply.redirect('/shows/new');
       if (shows.length === 1) return reply.redirect(`/shows/${shows[0]!.slug}`);
       const summaries = shows.map((show) => ({
         show,
@@ -573,14 +578,14 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     imported: { ok: true, message: 'Backup added to the list. Choose Restore to use it.' },
     scanned: { ok: true, message: 'Checked the backups folder.' },
   };
-  app.get('/settings', ownerAuthed((req, reply, session) => {
+  app.get('/settings', siteAdminAuthed((req, reply, session) => {
     const flash = BACKUP_FLASH[(req.query as { backup?: string }).backup ?? ''];
     return page(reply, settingsPage(settingsView(session, flash ? { section: 'backups', ...flash } : undefined)));
   }));
 
   app.post(
     '/settings/test-email',
-    ownerMutating(async (_req, reply, session) => {
+    siteAdminMutating(async (_req, reply, session) => {
       const to = session.email;
       if (!ctx.mailer || !to) return page(reply, settingsPage(settingsView(session, { section: 'email', ok: false, message: 'Email is not configured. Set MAIL_PROVIDER and its settings in .env.' })));
       try {
@@ -596,7 +601,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.post(
     '/settings/test-storage',
-    ownerMutating(async (_req, reply, session) => {
+    siteAdminMutating(async (_req, reply, session) => {
       const key = `healthcheck/${ulid()}.txt`;
       const body = Buffer.from('ListenerLoop storage check');
       const steps: string[] = [];
@@ -624,7 +629,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   // User management, account and sign-in links live in routes/users.ts
   const renderSettings = (reply: FastifyReply, session: AdminSession, result: NonNullable<SettingsView['result']>, status = 200): FastifyReply => page(reply, settingsPage(settingsView(session, result)), status);
-  const kit = { renderSettings, authed, mutating, ownerAuthed, ownerMutating, page, sameOrigin, field, forbidden, accessibleShows, notFound };
+  const kit = { renderSettings, authed, mutating, siteAdminAuthed, siteAdminMutating, manageAuthed, manageMutating, page, sameOrigin, field, forbidden, accessibleShows, notFound };
   registerUserRoutes(app, ctx, kit);
   registerWebhookRoutes(app, ctx, kit);
   registerExportRoutes(app, ctx, kit);
@@ -747,28 +752,30 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.get(
     '/shows',
-    ownerAuthed((req, reply, session) => {
+    manageAuthed((req, reply, session) => {
       const flash = FLASH[(req.query as { flash?: string }).flash ?? ''];
-      return page(reply, showsPage(accessibleShows(session), config.appUrl, session.csrf, flash));
+      return page(reply, showsPage(accessibleShows(session), config.appUrl, session.csrf, session.role, flash));
     }),
   );
 
   app.get(
     '/shows/new',
-    ownerAuthed((_req, reply, session) =>
-      page(reply, showFormPage({ csrf: session.csrf, show: null, values: blankValues(), errors: [], maxSecondsLimit: MAX_SECONDS_LIMIT, appUrl: config.appUrl, transcriptionOn: transcriptionAvailable(ctx) })),
+    manageAuthed((_req, reply, session) =>
+      page(reply, showFormPage({ csrf: session.csrf, show: null, values: blankValues(), errors: [], maxSecondsLimit: MAX_SECONDS_LIMIT, role: session.role, appUrl: config.appUrl, transcriptionOn: transcriptionAvailable(ctx) })),
     ),
   );
 
   app.post(
     '/shows',
-    ownerMutating(async (req, reply, session) => {
+    manageMutating(async (req, reply, session) => {
       const values = valuesFromBody(req.body, blankValues());
       const { errors, fields } = parseShowForm(req.body, values, null);
       if (errors.length) {
-        return page(reply, showFormPage({ csrf: session.csrf, show: null, values, errors, maxSecondsLimit: MAX_SECONDS_LIMIT, appUrl: config.appUrl, transcriptionOn: transcriptionAvailable(ctx) }), 400);
+        return page(reply, showFormPage({ csrf: session.csrf, show: null, values, errors, maxSecondsLimit: MAX_SECONDS_LIMIT, role: session.role, appUrl: config.appUrl, transcriptionOn: transcriptionAvailable(ctx) }), 400);
       }
       const created = repo.createShow({ ...(fields as Omit<typeof fields, 'name'>), name: values.name });
+      // An owner gets the show they just made; site admins already see every show.
+      if (session.role === 'owner') repo.setUserShows(session.userId, [...repo.userShowIds(session.userId), created.id]);
       if (created.feed_url) {
         const cover = await refreshCover(ctx, created);
         if (!cover.ok) return reply.redirect(`/shows/${created.slug}/settings?flash=coverfail`);
@@ -787,23 +794,23 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.get(
     '/shows/:slug/settings',
-    ownerAuthed((req, reply, session) => {
+    manageAuthed((req, reply, session) => {
       const show = showFor(req, session);
       if (!show) return notFound(reply);
       const flash = FLASH[(req.query as { flash?: string }).flash ?? ''];
-      return page(reply, showFormPage({ csrf: session.csrf, show, values: valuesFromShow(show), errors: [], maxSecondsLimit: MAX_SECONDS_LIMIT, appUrl: config.appUrl, transcriptionOn: transcriptionAvailable(ctx), flash }));
+      return page(reply, showFormPage({ csrf: session.csrf, show, values: valuesFromShow(show), errors: [], maxSecondsLimit: MAX_SECONDS_LIMIT, role: session.role, appUrl: config.appUrl, transcriptionOn: transcriptionAvailable(ctx), flash }));
     }),
   );
 
   app.post(
     '/shows/:slug/settings',
-    ownerMutating(async (req, reply, session) => {
+    manageMutating(async (req, reply, session) => {
       const show = showFor(req, session);
       if (!show) return notFound(reply);
       const values = valuesFromBody(req.body, valuesFromShow(show));
       const { errors, fields } = parseShowForm(req.body, values, show);
       if (errors.length) {
-        return page(reply, showFormPage({ csrf: session.csrf, show, values, errors, maxSecondsLimit: MAX_SECONDS_LIMIT, appUrl: config.appUrl, transcriptionOn: transcriptionAvailable(ctx) }), 400);
+        return page(reply, showFormPage({ csrf: session.csrf, show, values, errors, maxSecondsLimit: MAX_SECONDS_LIMIT, role: session.role, appUrl: config.appUrl, transcriptionOn: transcriptionAvailable(ctx) }), 400);
       }
       repo.updateShow(show.id, fields);
       if ((fields.feed_url ?? null) !== (show.feed_url ?? null)) {
@@ -831,7 +838,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.post(
     '/shows/:slug/cover/refresh',
-    ownerMutating(async (req, reply, session) => {
+    manageMutating(async (req, reply, session) => {
       const show = showFor(req, session);
       if (!show) return notFound(reply);
       const result = show.feed_url ? await refreshCover(ctx, show) : { ok: false as const, error: '' };
@@ -840,8 +847,26 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
   );
 
   app.post(
+    '/shows/:slug/delete',
+    manageMutating(async (req, reply, session) => {
+      const show = showFor(req, session);
+      if (!show) return notFound(reply);
+      if (field(req.body, 'confirm').trim() !== show.name) {
+        return page(reply, showFormPage({ csrf: session.csrf, show, values: valuesFromShow(show), errors: ['The name you typed does not match, so nothing was deleted.'], maxSecondsLimit: MAX_SECONDS_LIMIT, role: session.role, appUrl: config.appUrl, transcriptionOn: transcriptionAvailable(ctx) }), 400);
+      }
+      // Recordings first, then the rows (messages, webhooks and access lists go with the show).
+      let failed = 0;
+      for (const m of repo.listShowMessages(show.id)) if (!(await purgeMessage(ctx, m))) failed++;
+      if (failed) return reply.redirect(`/shows/${show.slug}/settings?flash=deletefail`);
+      if (show.cover_key) await ctx.storage.delete(show.cover_key).catch(() => undefined);
+      repo.deleteShow(show.id);
+      return reply.redirect('/shows?flash=deleted');
+    }),
+  );
+
+  app.post(
     '/shows/:slug/rotate-key',
-    ownerMutating((req, reply, session) => {
+    manageMutating((req, reply, session) => {
       const show = showFor(req, session);
       if (!show) return notFound(reply);
       repo.rotateSiteKey(show.id);

@@ -185,7 +185,7 @@ describe('restore', () => {
       expect(applyPendingRestore({ dataDir: data, databasePath: dbPath, audioPath: path.join(data, 'audio'), localStorage: true })?.ok).toBe(true);
       const upgraded = openDb(dbPath);
       migrate(upgraded);
-      expect(new Repo(upgraded).firstOwner()?.email).toBe('legacy@example.com');
+      expect(new Repo(upgraded).firstSiteAdmin()?.email).toBe('legacy@example.com');
       upgraded.close();
     });
 

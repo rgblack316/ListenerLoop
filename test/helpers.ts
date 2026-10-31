@@ -64,7 +64,7 @@ export async function makeHarness(
     verifyTurnstile: verify ?? defaultVerify,
     logger: false,
   });
-  ctx.repo.upsertOwner(ADMIN_EMAIL, await hash(ADMIN_PASSWORD));
+  ctx.repo.upsertSiteAdmin(ADMIN_EMAIL, await hash(ADMIN_PASSWORD));
   return {
     app,
     ctx,

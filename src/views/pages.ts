@@ -38,6 +38,8 @@ export function loginPage(error?: string, ticket?: string): string {
 }
 
 // ---------------------------------------------------------------- inbox
+/** Site admins and owners may open show settings; owners only for their own shows. */
+export const manages = (r: Role | undefined): boolean => r === 'site_admin' || r === 'owner';
 const msgBase = (m: { show_slug: string; id: string }): string => `/shows/${m.show_slug}/messages/${m.id}`;
 
 /** Turn a snippet with \u0001/\u0002 match markers into escaped HTML with <mark> around matches. */
@@ -130,7 +132,7 @@ export function inboxPage(v: InboxView): string {
       : ''}
     <div class="head-row">
       <h1 class="with-cover">${v.show ? coverThumb(v.show, 'lg') : ''}<span>${v.show ? v.show.name : 'All messages'}</span></h1>
-      ${v.show && v.role === 'owner' ? html`<a href="/shows/${v.show.slug}/settings">Settings and embed code</a>` : ''}
+      ${v.show && manages(v.role) ? html`<a href="/shows/${v.show.slug}/settings">Settings and embed code</a>` : ''}
     </div>
     <div class="toolbar">
       ${v.search
@@ -154,7 +156,7 @@ export function inboxPage(v: InboxView): string {
         </form>`
       : ''}
     ${v.messages.length === 0
-      ? html`<p class="empty">${!v.hasShows ? html`${v.role === 'owner' ? html`No shows yet. <a href="/shows/new">Add your first show</a> to get an embed snippet.` : 'You have not been given access to any shows yet. Ask an owner to add you.'}` : v.search ? 'No messages match that search.' : 'No messages here.'}</p>`
+      ? html`<p class="empty">${!v.hasShows ? html`${manages(v.role) ? html`No shows yet. <a href="/shows/new">Add your first show</a> to get an embed snippet.` : 'You have not been given access to any shows yet. Ask a site admin or an owner to add you.'}` : v.search ? 'No messages match that search.' : 'No messages here.'}</p>`
       : html`<ul class="msgs">${v.messages.map((m) => messageRow(m, v.snippets.get(m.id), v.role !== 'viewer'))}</ul>`}
     ${v.pages > 1
       ? html`<nav class="pager" aria-label="Pages">
@@ -236,7 +238,7 @@ function replyCard(m: MessageWithShow, csrf: string, v: ReplyView, role: Role): 
       ${role === 'viewer'
         ? ''
         : v.blockedText
-        ? html`<p class="muted">${v.blockedText}</p>${v.blockedCode === 'no_show_email' && role === 'owner' ? html`<p><a class="btn" href="/shows/${m.show_slug}/settings">Open show settings</a></p>` : ''}`
+        ? html`<p class="muted">${v.blockedText}</p>${v.blockedCode === 'no_show_email' && manages(role) ? html`<p><a class="btn" href="/shows/${m.show_slug}/settings">Open show settings</a></p>` : ''}`
         : html`${v.draft.error ? html`<div class="alert" role="alert"><p>${v.draft.error}</p></div>` : ''}
           <form method="post" action="${msgBase(m)}/reply" class="stack">
             ${csrfField(csrf)}
@@ -280,7 +282,7 @@ export function messagePage(m: MessageWithShow, csrf: string, role: Role, flash?
           </p>
           ${m.original_key
             ? html`<p class="muted" data-version-note>Switching keeps your place, so you can hear the processed and original recordings side by side. The original is exactly what the listener's browser recorded, before conversion.</p>`
-            : html`<p class="muted">The original recording was not kept for this message.${role === 'owner' ? html` Turn on &ldquo;Keep the original recording&rdquo; in <a href="/shows/${m.show_slug}/settings">the show's settings</a> to keep it for new messages.` : ''}</p>`}`
+            : html`<p class="muted">The original recording was not kept for this message.${manages(role) ? html` Turn on &ldquo;Keep the original recording&rdquo; in <a href="/shows/${m.show_slug}/settings">the show's settings</a> to keep it for new messages.` : ''}</p>`}`
         : m.status === 'failed'
           ? html`<div class="alert"><p>This message could not be processed: ${m.error ?? 'unknown error'}</p>
               ${m.original_key
@@ -351,10 +353,11 @@ export function coverThumb(show: Pick<Show, 'slug' | 'name' | 'cover_key' | 'cov
   return html`<span class="cover cover-${size} cover-letter" aria-hidden="true">${[...show.name.trim()][0]?.toUpperCase() ?? '?'}</span>`;
 }
 
-export function showsPage(shows: Show[], appUrl: string, csrf: string, flash?: string): string {
+export function showsPage(shows: Show[], appUrl: string, csrf: string, role: Role, flash?: string): string {
   return layout({
     title: 'Shows',
     csrf,
+    role,
     nav: 'shows',
     body: html`<div class="head-row"><h1>Shows</h1><a class="btn primary" href="/shows/new">Add show</a></div>
     ${flash ? html`<p class="notice" role="status">${flash}</p>` : ''}
@@ -405,6 +408,7 @@ export function showFormPage(opts: {
   values: ShowFormValues;
   errors: string[];
   maxSecondsLimit: number;
+  role: Role;
   appUrl: string;
   /** Whether the server has transcription switched on (TRANSCRIPTION=whisper). */
   transcriptionOn: boolean;
@@ -414,7 +418,7 @@ export function showFormPage(opts: {
   return layout({
     title: show ? `Edit ${show.name}` : 'Add show',
     csrf: opts.csrf,
-    role: 'owner',
+    role: opts.role,
     nav: 'shows',
     body: html`<p><a href="/shows">&larr; Back to shows</a></p>
     <h1 class="with-cover">${show ? coverThumb(show, 'lg') : ''}<span>${show ? `Edit ${show.name}` : 'Add show'}</span></h1>
@@ -493,7 +497,17 @@ export function showFormPage(opts: {
       <iframe id="preview-frame" src="/static/preview.html" title="Widget preview" loading="lazy"></iframe>
       <p class="muted">Updates as you type. The recorder itself works on your site.</p>
     </aside>
-    </div>`,
+    </div>
+    ${show
+      ? html`<section class="card danger-zone" id="delete-show">
+          <h2>Delete this show</h2>
+          <p class="muted">Removes the show, all of its messages and recordings, its webhooks and its access list. This cannot be undone. Consider downloading the messages first.</p>
+          <form method="post" action="/shows/${show.slug}/delete" class="stack">${csrfField(opts.csrf)}
+            <label>Type the show name to confirm<input name="confirm" autocomplete="off" required placeholder="${show.name}"></label>
+            <button class="btn danger" type="submit">Delete ${show.name}</button>
+          </form>
+        </section>`
+      : ''}`,
   });
 }
 
@@ -522,7 +536,7 @@ export function settingsPage(v: SettingsView): string {
   return layout({
     title: 'Settings',
     csrf: v.csrf,
-    role: 'owner',
+    role: 'site_admin',
     nav: 'settings',
     body: html`<h1>Settings</h1>
 

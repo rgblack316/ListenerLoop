@@ -4,8 +4,9 @@ import { randomToken, slugify, ulid } from '../lib/util.js';
 export type NoiseReduction = 'off' | 'light' | 'strong';
 export const NOISE_REDUCTION_LEVELS: NoiseReduction[] = ['off', 'light', 'strong'];
 
-export type Role = 'owner' | 'editor' | 'viewer';
-export const ROLES: Role[] = ['owner', 'editor', 'viewer'];
+/** site_admin = runs the installation; owner = runs their own shows; then editor and viewer. */
+export type Role = 'site_admin' | 'owner' | 'editor' | 'viewer';
+export const ROLES: Role[] = ['site_admin', 'owner', 'editor', 'viewer'];
 
 export interface User {
   id: string;
@@ -457,17 +458,27 @@ export class Repo {
       .all(beforeIso) as Message[];
   }
 
+  /** Every message of one show, whatever its state (used when the show is deleted). */
+  listShowMessages(showId: string): Message[] {
+    return this.db.prepare('SELECT * FROM messages WHERE show_id = ?').all(showId) as Message[];
+  }
+
+  /** Deletes a show; its messages, replies, webhooks and access lists go with it (foreign keys). */
+  deleteShow(id: string): void {
+    this.db.prepare('DELETE FROM shows WHERE id = ?').run(id);
+  }
+
   purgeMessage(id: string): void {
     this.db.prepare('DELETE FROM messages WHERE id = ?').run(id);
   }
 
   // ---- users + sessions ----
-  firstOwner(): User | undefined {
-    return this.db.prepare("SELECT * FROM users WHERE role = 'owner' AND disabled_at IS NULL ORDER BY created_at LIMIT 1").get() as User | undefined;
+  firstSiteAdmin(): User | undefined {
+    return this.db.prepare("SELECT * FROM users WHERE role = 'site_admin' AND disabled_at IS NULL ORDER BY created_at LIMIT 1").get() as User | undefined;
   }
 
-  hasOwner(): boolean {
-    return !!this.firstOwner();
+  hasSiteAdmin(): boolean {
+    return !!this.firstSiteAdmin();
   }
 
   getUser(id: string): User | undefined {
@@ -482,8 +493,8 @@ export class Repo {
     return this.db.prepare('SELECT * FROM users ORDER BY created_at').all() as User[];
   }
 
-  countActiveOwners(): number {
-    return (this.db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'owner' AND disabled_at IS NULL").get() as { n: number }).n;
+  countActiveSiteAdmins(): number {
+    return (this.db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'site_admin' AND disabled_at IS NULL").get() as { n: number }).n;
   }
 
   createUser(u: { email: string; name?: string; passwordHash: string; role: Role; showIds?: string[] }): User {
@@ -498,10 +509,10 @@ export class Repo {
   }
 
   /** Creates the owner, or replaces the first owner's email and password (CLI). */
-  upsertOwner(email: string, passwordHash: string): void {
-    const owner = this.firstOwner();
+  upsertSiteAdmin(email: string, passwordHash: string): void {
+    const owner = this.firstSiteAdmin();
     if (!owner) {
-      this.createUser({ email, passwordHash, role: 'owner' });
+      this.createUser({ email, passwordHash, role: 'site_admin' });
       return;
     }
     this.db.prepare('UPDATE users SET email = ?, password_hash = ?, disabled_at = NULL WHERE id = ?').run(email.trim(), passwordHash, owner.id);

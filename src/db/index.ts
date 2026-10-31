@@ -8,6 +8,8 @@ interface Migration {
   id: number;
   name: string;
   sql: string;
+  /** Runs instead of sql, with foreign keys switched off (for table rebuilds). */
+  rebuild?: (db: DB) => void;
 }
 
 /** Append-only. Never edit a migration that has shipped; add a new one. */
@@ -290,6 +292,29 @@ export const MIGRATIONS: Migration[] = [
     sql: `ALTER TABLE shows ADD COLUMN embed_blurb TEXT;
       ALTER TABLE shows ADD COLUMN embed_style TEXT NOT NULL DEFAULT 'card';`,
   },
+  {
+    id: 15,
+    name: 'site admin and owner roles',
+    sql: '',
+    // SQLite cannot change a CHECK in place, so the users table is rebuilt. The old "owner" role (runs the whole
+    // installation) becomes "site_admin"; "owner" now means someone who runs their own shows.
+    rebuild: (db) => {
+      const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").get() as { sql: string };
+      const indexes = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'users' AND sql IS NOT NULL").all() as { sql: string }[];
+      const cols = (db.prepare('PRAGMA table_info(users)').all() as { name: string }[]).map((c) => c.name);
+      const next = row.sql
+        .replace("CHECK (role IN ('owner', 'editor', 'viewer'))", "CHECK (role IN ('site_admin', 'owner', 'editor', 'viewer'))")
+        .replace(/CREATE TABLE\s+"?users"?/i, 'CREATE TABLE users_new');
+      if (!next.includes("'site_admin'") || !next.includes('users_new')) throw new Error('Could not update the users table for the new roles.');
+      db.exec(next);
+      const select = cols.map((c) => (c === 'role' ? "CASE role WHEN 'owner' THEN 'site_admin' ELSE role END" : c)).join(', ');
+      db.exec(`INSERT INTO users_new (${cols.join(', ')}) SELECT ${select} FROM users`);
+      db.exec('DROP TABLE users');
+      db.exec('ALTER TABLE users_new RENAME TO users');
+      db.exec("UPDATE invites SET role = 'site_admin' WHERE role = 'owner'");
+      for (const i of indexes) db.exec(i.sql);
+    },
+  },
 ];
 
 export function migrate(db: DB): void {
@@ -297,11 +322,22 @@ export function migrate(db: DB): void {
   const applied = new Set(db.prepare('SELECT id FROM schema_migrations').all().map((r) => (r as { id: number }).id));
   for (const m of MIGRATIONS) {
     if (applied.has(m.id)) continue;
-    const run = db.transaction(() => {
-      db.exec(m.sql);
-      db.prepare('INSERT INTO schema_migrations (id, name, applied_at) VALUES (?, ?, ?)').run(m.id, m.name, new Date().toISOString());
-    });
-    run();
+    // Table rebuilds need foreign keys off (a pragma that only works outside a transaction).
+    if (m.rebuild) db.pragma('foreign_keys = OFF');
+    try {
+      const run = db.transaction(() => {
+        if (m.rebuild) m.rebuild(db);
+        else db.exec(m.sql);
+        if (m.rebuild) {
+          const bad = db.pragma('foreign_key_check') as unknown[];
+          if (bad.length) throw new Error('Foreign key check failed after rebuilding a table.');
+        }
+        db.prepare('INSERT INTO schema_migrations (id, name, applied_at) VALUES (?, ?, ?)').run(m.id, m.name, new Date().toISOString());
+      });
+      run();
+    } finally {
+      if (m.rebuild) db.pragma('foreign_keys = ON');
+    }
   }
 }
 

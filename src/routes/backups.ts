@@ -13,16 +13,16 @@ import type { RouteKit } from './users.js';
 
 export function registerBackupRoutes(app: FastifyInstance, ctx: AppContext, kit: RouteKit): void {
   const { repo, storage } = ctx;
-  const { ownerAuthed, ownerMutating, field, notFound, renderSettings } = kit;
+  const { siteAdminAuthed, siteAdminMutating, field, notFound, renderSettings } = kit;
   const msg = (err: unknown): string => (err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').slice(0, 300);
   const back = (flash: string) => `/settings?backup=${flash}#backups`;
 
-  app.post('/settings/backups/run', ownerMutating((_req, reply, session) => {
+  app.post('/settings/backups/run', siteAdminMutating((_req, reply, session) => {
     const r = startBackup(ctx, 'manual', session.email);
     return reply.redirect(back('error' in r ? 'running' : 'started'));
   }));
 
-  app.post('/settings/backups', ownerMutating((req, reply) => {
+  app.post('/settings/backups', siteAdminMutating((req, reply) => {
     const body = req.body as Record<string, unknown>;
     const s = normalizeSettings({
       schedule: field(body, 'schedule') as 'off',
@@ -36,7 +36,7 @@ export function registerBackupRoutes(app: FastifyInstance, ctx: AppContext, kit:
     return reply.redirect(back('saved'));
   }));
 
-  app.get('/settings/backups/:id/download', ownerAuthed(async (req, reply) => {
+  app.get('/settings/backups/:id/download', siteAdminAuthed(async (req, reply) => {
     const b = repo.getBackup((req.params as { id: string }).id);
     if (!b || b.status !== 'ok' || !b.file) return notFound(reply);
     reply.header('Content-Disposition', `attachment; filename="${b.file}"`).header('Cache-Control', 'no-store').type('application/gzip');
@@ -47,7 +47,7 @@ export function registerBackupRoutes(app: FastifyInstance, ctx: AppContext, kit:
     return notFound(reply);
   }));
 
-  app.post('/settings/backups/:id/delete', ownerMutating(async (req, reply) => {
+  app.post('/settings/backups/:id/delete', siteAdminMutating(async (req, reply) => {
     const b = repo.getBackup((req.params as { id: string }).id);
     if (!b) return notFound(reply);
     if (b.status === 'running') return reply.redirect(back('running'));
@@ -56,7 +56,7 @@ export function registerBackupRoutes(app: FastifyInstance, ctx: AppContext, kit:
   }));
 
   // ---------------------------------------------------------------- restore
-  app.get('/settings/backups/:id/restore', ownerAuthed(async (req, reply, session) => {
+  app.get('/settings/backups/:id/restore', siteAdminAuthed(async (req, reply, session) => {
     const b = repo.getBackup((req.params as { id: string }).id);
     if (!b || b.status !== 'ok') return notFound(reply);
     let copy;
@@ -71,7 +71,7 @@ export function registerBackupRoutes(app: FastifyInstance, ctx: AppContext, kit:
     }
   }));
 
-  app.post('/settings/backups/:id/restore', ownerMutating(async (req, reply, session) => {
+  app.post('/settings/backups/:id/restore', siteAdminMutating(async (req, reply, session) => {
     const b = repo.getBackup((req.params as { id: string }).id);
     if (!b || b.status !== 'ok') return notFound(reply);
     const fail = (message: string, status = 400) => renderSettings(reply, session, { section: 'backups', ok: false, message }, status);
@@ -98,13 +98,13 @@ export function registerBackupRoutes(app: FastifyInstance, ctx: AppContext, kit:
     return kit.page(reply, restoringPage());
   }));
 
-  app.post('/settings/backups/scan', ownerMutating(async (_req, reply) => {
+  app.post('/settings/backups/scan', siteAdminMutating(async (_req, reply) => {
     await reconcileBackups(ctx);
     return reply.redirect(back('scanned'));
   }));
 
   // Uploading a backup file. The token field must come before the file so it is checked before anything is written.
-  app.post('/settings/backups/import', ownerAuthed(async (req, reply, session) => {
+  app.post('/settings/backups/import', siteAdminAuthed(async (req, reply, session) => {
     const fail = (message: string, status = 400) => renderSettings(reply, session, { section: 'backups', ok: false, message }, status);
     if (!kit.sameOrigin(req)) return reply.code(403).type('text/plain').send('Request could not be verified. Reload the page and try again.');
     if (!req.isMultipart()) return fail('Choose a backup file to upload.');

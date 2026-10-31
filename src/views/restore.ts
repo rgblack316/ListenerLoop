@@ -19,7 +19,7 @@ export function restoreConfirmPage(v: RestoreConfirmView): string {
   return layout({
     title: 'Restore a backup',
     csrf: v.csrf,
-    role: 'owner',
+    role: 'site_admin',
     nav: 'settings',
     body: html`<p><a href="/settings#backups">&larr; Back to settings</a></p>
     <h1>Restore this backup?</h1>

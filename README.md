@@ -65,11 +65,20 @@ Paste the embed snippet from the **Shows** page into the podcast site:
 
 **Embed look.** By default the embed is a small card: a heading ("Leave a message for *your show*"), a short message, the button, and a "Powered by ListenerLoop" link with the logo. In show settings you can change the message or switch to **Button only**; a page can also override with `data-style="button"` or `data-style="card"` on the script tag. It is drawn in a shadow DOM so the host site's CSS cannot restyle it, and it sets styles through the CSSOM so strict Content Security Policies do not block it. Other script options: `data-theme="dark"`, `data-align="center"`, `data-blurb`, `data-label`, `data-target="#selector"`.
 
-**Webhooks and export.** Owners can add up to 3 webhooks per show (show settings, then **Webhooks**): ListenerLoop POSTs a JSON message to your https address when a message is ready, a transcript finishes, or a reply is sent. Requests are signed (`X-ListenerLoop-Signature: sha256=` HMAC of `timestamp.body`), failures retry up to 5 times, and a **Send a test** button checks your server. Every inbox has **Export: CSV / JSON** links that respect the current tab or search and the user's show access.
+**Webhooks and export.** Site admins and owners can add up to 3 webhooks per show (show settings, then **Webhooks**): ListenerLoop POSTs a JSON message to your https address when a message is ready, a transcript finishes, or a reply is sent. Requests are signed (`X-ListenerLoop-Signature: sha256=` HMAC of `timestamp.body`), failures retry up to 5 times, and a **Send a test** button checks your server. Every inbox has **Export: CSV / JSON** links that respect the current tab or search and the user's show access.
 
 When a show keeps original recordings (show settings, "Keep the original recording", or `KEEP_ORIGINALS=true`), the message page has a **Version** dropdown to switch between the processed MP3 and the original, keeping your place so you can compare them, and to download either one.
 
-Sign in at `https://YOUR-APP-DOMAIN/login`. The first owner is made with `create-admin`; after that, owners add people from **Users**: an emailed invitation link (valid 7 days) lets them choose their own password. Roles: **owner** (everything), **editor** (listen, star, archive, delete, reply, transcribe, download on assigned shows), **viewer** (read-only on assigned shows). Everyone can change their password and turn on two-step sign-in (authenticator app plus recovery codes) from **Account**; an owner can make a password reset link or switch off two-step for a locked-out user. Each show has its own inbox at `/shows/<slug>` (for example `/shows/bible-bytes`), and `/inbox` combines all of them. CLI helpers: `docker compose exec app node dist/cli.js` with `create-admin` (creates or resets the first owner), `add-show`, `list-shows`, `set-origins`, `rotate-key`.
+Sign in at `https://YOUR-APP-DOMAIN/login`. The first **site admin** is made with `create-admin`. Four roles:
+
+| Role | What they can do |
+| --- | --- |
+| **Site admin** | Everything: server Settings (email, storage, backups, restore), every show, every user. Can make other site admins and owners. |
+| **Owner** | Runs their own shows: adds new shows (they get them automatically), edits settings, embed code and webhooks, and deletes shows assigned to them. Invites and manages editors and viewers for those shows. No server Settings or backups, and cannot see other shows. |
+| **Editor** | Listen, star, archive, delete, reply, transcribe and download on assigned shows. |
+| **Viewer** | Read-only on assigned shows. |
+
+People are added from **Users** with an emailed invitation link (valid 7 days) so they choose their own password. Everyone can change their password and turn on two-step sign-in (authenticator app plus recovery codes) from **Account**; a site admin can make a password reset link or switch off two-step for a locked-out user (an owner can do the same for editors and viewers on their shows). Each show has its own inbox at `/shows/<slug>` (for example `/shows/bible-bytes`), and `/inbox` combines all of them, with a show picker. CLI helpers: `docker compose exec app node dist/cli.js` with `create-admin` (creates or resets the first site admin), `add-show`, `list-shows`, `set-origins`, `rotate-key`.
 
 - **Storage:** with the `s3` driver, use a private bucket and an access key made just for ListenerLoop, not your public podcast CDN. Audio is played through the app (a signed link that expires after 5 minutes), never from a public URL.
 - **Turnstile:** create one widget in Cloudflare listing only your app's hostname. Embedding sites need no key of their own.
@@ -103,7 +112,7 @@ Choosing a model: `base.en` is about real time on 2 CPU cores and fine for clear
 
 ## Backup and restore
 
-**From the app.** Owners can open **Settings, Backups** to back up on demand or on a schedule (daily or weekly at a chosen UTC hour, keeping the newest N). Each backup is one `.tar.gz` with a consistent database copy and, with local storage, the audio files; it does not include `.env`. With S3 or R2 storage you choose where archives are kept: on this server only, in the bucket only (under `backups/`), or both. Server copies live in `/data/backups` inside the app's Docker volume, the same disk as the database, so download them or keep a bucket copy. A failed scheduled backup emails the first owner. 
+**From the app.** Site admins can open **Settings, Backups** to back up on demand or on a schedule (daily or weekly at a chosen UTC hour, keeping the newest N). Each backup is one `.tar.gz` with a consistent database copy and, with local storage, the audio files; it does not include `.env`. With S3 or R2 storage you choose where archives are kept: on this server only, in the bucket only (under `backups/`), or both. Server copies live in `/data/backups` inside the app's Docker volume, the same disk as the database, so download them or keep a bucket copy. A failed scheduled backup emails the first owner. 
 
 **Restoring from the app.** In the same panel, choose **Restore** on a saved backup, or upload a backup file (up to 1 GB; behind Cloudflare, uploads over 100 MB are refused, so copy big files into `/data/backups` and press **Find backup files in the folder**). You confirm with your password and by typing RESTORE. The archive is checked first (plain files only, intact database, not from a newer app), then the app restarts and swaps it in: the old database and local audio are set aside in a `pre-restore-…` folder in the data directory for 30 days, nothing is deleted. Everyone is signed out afterwards and signs in with an account from the backup. Backups from before multi-user (single admin) are upgraded automatically. On a brand-new server, install first, then use `restore.sh --with-env` or restore from the app. A backup made by the app has no `.env`, so keep your own copy of it.
 
@@ -144,7 +153,7 @@ To restore on the same server, run `restore.sh` with the archive. It asks for co
 | Audio | ffmpeg and ffprobe, MP3 output |
 | Storage | `s3` (any S3-compatible service) or `local` driver |
 | Admin UI | Server-rendered pages with htmx, no SPA framework |
-| Admin auth | Multiple users with owner, editor and viewer roles and per-show access (argon2, session cookie, optional TOTP) |
+| Admin auth | Multiple users with site admin, owner, editor and viewer roles and per-show access (argon2, session cookie, optional TOTP) |
 | Email | SMTP or Resend |
 | Spam protection | Cloudflare Turnstile, one app-wide key for every show |
 | Deploy | Docker Compose on Ubuntu Server (app + Caddy). A systemd guide is planned. |

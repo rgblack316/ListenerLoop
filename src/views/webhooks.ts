@@ -1,10 +1,11 @@
 import { html, raw, type Raw } from '../lib/html.js';
-import { WEBHOOK_EVENTS, type Show, type Webhook, type WebhookDelivery, type WebhookEvent } from '../db/repo.js';
+import { WEBHOOK_EVENTS, type Role, type Show, type Webhook, type WebhookDelivery, type WebhookEvent } from '../db/repo.js';
 import { EVENT_LABELS } from '../webhook.js';
 import { csrfField, layout, timeTag } from './layout.js';
 
 export interface WebhooksView {
   csrf: string;
+  role: Role;
   show: Show;
   hooks: Array<Webhook & { deliveries: WebhookDelivery[] }>;
   canAdd: boolean;
@@ -19,7 +20,7 @@ export function webhooksPage(v: WebhooksView): string {
   return layout({
     title: `Webhooks · ${s.name}`,
     csrf: v.csrf,
-    role: 'owner',
+    role: v.role,
     nav: 'shows',
     body: html`<p><a href="/shows/${s.slug}/settings">&larr; Back to ${s.name} settings</a></p>
     <h1>Webhooks</h1>

@@ -130,7 +130,7 @@ export async function notifyNewMessage(ctx: AppContext, id: string): Promise<Ale
   const msg = repo.getMessage(id);
   if (!msg) return 'skipped';
   const show = repo.getShow(msg.show_id);
-  const to = show?.notify_email || repo.firstOwner()?.email;
+  const to = show?.notify_email || repo.firstSiteAdmin()?.email;
   if (!mailer) {
     log.info({ messageId: id }, 'no mail provider configured; skipping email alert');
     return 'skipped';
