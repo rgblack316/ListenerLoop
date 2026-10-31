@@ -158,6 +158,10 @@ To restore on the same server, run `restore.sh` with the archive. It asks for co
 
 Details and acceptance criteria are in [PLAN.md](PLAN.md).
 
+## Credits
+
+Admin fonts: Bricolage Grotesque and Figtree, bundled under the SIL Open Font License (see `public/fonts`).
+
 ## License
 
 ListenerLoop is licensed under the [GNU Affero General Public License v3.0](LICENSE.md). If you run a modified version as a network service, you must offer its source code to your users.

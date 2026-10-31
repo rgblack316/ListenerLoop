@@ -33,7 +33,7 @@ export function layout(opts: LayoutOptions): string {
   const headers = opts.csrf ? JSON.stringify({ 'x-csrf-token': opts.csrf }) : '';
   const nav = opts.csrf
     ? html`<nav class="nav" aria-label="Main">
-        <a class="brand" href="/"><img src="/static/brand/ListenerLoop-original-gradient.svg" alt="" width="28" height="28"> ListenerLoop</a>
+        <a class="brand" href="/"><img src="/static/brand/ListenerLoop-original-white.svg" alt="" width="30" height="30"> ListenerLoop</a>
         <a href="/inbox" ${opts.nav === 'inbox' ? raw('aria-current="page"') : ''}>Inbox</a>
         ${opts.role === 'owner' ? html`<a href="/shows" ${opts.nav === 'shows' ? raw('aria-current="page"') : ''}>Shows</a>
         <a href="/users" ${opts.nav === 'users' ? raw('aria-current="page"') : ''}>Users</a>
@@ -56,9 +56,10 @@ export function layout(opts: LayoutOptions): string {
 <link rel="icon" type="image/svg+xml" href="/static/brand/ListenerLoop-original-gradient.svg">
 <link rel="stylesheet" href="/static/admin.css?v=${ASSET_VERSION}">
 </head>
-<body${headers ? ` hx-headers='${esc(headers)}'` : ''}>
+<body class="${opts.csrf ? 'shell' : 'auth'}"${headers ? ` hx-headers='${esc(headers)}'` : ''}>
 ${nav}
 <main class="page">
+${opts.csrf ? '' : '<p class="auth-brand"><img src="/static/brand/ListenerLoop-original-white.svg" alt="" width="40" height="40"> ListenerLoop</p>'}
 ${opts.body}
 </main>
 <script src="/static/vendor/htmx.min.js"></script>

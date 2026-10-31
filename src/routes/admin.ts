@@ -89,6 +89,7 @@ export function adminCsp(): string {
     "script-src 'self'",
     "style-src 'self'",
     "img-src 'self' data:",
+    "font-src 'self'",
     "media-src 'self' https:",
     "connect-src 'self'",
     "form-action 'self'",

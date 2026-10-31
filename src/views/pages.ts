@@ -50,6 +50,14 @@ function snippetHtml(snip: string): Raw {
   }).join(''));
 }
 
+/** A steady colour (1 to 6) for a sender, so the same person always gets the same avatar. */
+const avatarTone = (name: string): number => {
+  let n = 0;
+  for (const ch of name) n = (n * 31 + ch.codePointAt(0)!) % 997;
+  return (n % 6) + 1;
+};
+const avatarLetter = (name: string): string => (Array.from(name.trim())[0] ?? '?').toUpperCase();
+
 export function messageRow(m: MessageWithShow, snippet?: string, edit = true): Raw {
   const unread = m.status === 'ready' && !m.read_at;
   return html`<li id="row-${m.id}" class="msg${unread ? ' unread' : ''}">
@@ -58,6 +66,7 @@ export function messageRow(m: MessageWithShow, snippet?: string, edit = true): R
       ? html`<button class="star${m.starred ? ' on' : ''}" hx-post="${msgBase(m)}/star" hx-target="#row-${m.id}" hx-swap="outerHTML"
       aria-label="${m.starred ? 'Remove star' : 'Star message'}" aria-pressed="${m.starred ? 'true' : 'false'}">${m.starred ? '★' : '☆'}</button>`
       : html`<span class="star${m.starred ? ' on' : ''}" role="img" aria-label="${m.starred ? 'Starred' : 'Not starred'}">${m.starred ? '★' : '☆'}</span>`}
+    <span class="avatar tone-${avatarTone(m.sender_name)}" aria-hidden="true">${avatarLetter(m.sender_name)}</span>
     <a class="msg-main" href="${msgBase(m)}">
       <span class="who">${m.sender_name}${unread ? html` <span class="badge new">new</span>` : ''}${m.status === 'failed' ? html` <span class="badge bad">failed</span>` : ''}${m.status === 'processing' ? html` <span class="badge">processing</span>` : ''}${m.status === 'ready' && m.email_error ? html` <span class="badge bad">email failed</span>` : ''}${m.replied_at ? html` <span class="badge">replied</span>` : ''}</span>
       ${m.status === 'failed' ? html`<span class="meta fail">${m.error ?? 'Processing failed.'}</span>` : ''}
