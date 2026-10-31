@@ -203,6 +203,12 @@ describe('admin: shows', () => {
     expect(cfg.json().turnstileSiteKey).toBe(h.config.turnstile.siteKey);
   });
 
+  it('shows the embed code on the show settings page', async () => {
+    const page = await h.app.inject({ method: 'GET', url: `/shows/${show.slug}/settings`, headers: { cookie: session.cookie } });
+    expect(page.body).toContain('Put it on your website');
+    expect(page.body).toContain(`data-site-key=&quot;${h.ctx.repo.getShow(show.id)!.site_key}&quot;`);
+  });
+
   it('saves the embed style and message and exposes them in the public config', async () => {
     const base = { name: 'Randy Unscripted', slug: show.slug, notify_email: 'randy@example.com', max_seconds: '180', accent_color: '#112233', ask_email: '1' };
     const def = await h.app.inject({ method: 'GET', url: `/api/public/config?key=${show.site_key}` });

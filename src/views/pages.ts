@@ -395,6 +395,7 @@ export function showFormPage(opts: {
   values: ShowFormValues;
   errors: string[];
   maxSecondsLimit: number;
+  appUrl: string;
   /** Whether the server has transcription switched on (TRANSCRIPTION=whisper). */
   transcriptionOn: boolean;
   flash?: string;
@@ -416,6 +417,19 @@ export function showFormPage(opts: {
         </div>`
       : ''}
     ${opts.errors.length ? html`<div class="alert" role="alert"><ul>${opts.errors.map((e) => html`<li>${e}</li>`)}</ul></div>` : ''}
+    ${show
+      ? html`<section class="card" id="embed">
+          <h2>Put it on your website</h2>
+          <p class="muted">Paste this where the card should appear. Sites that may use it: ${showOrigins(show).length ? showOrigins(show).join(', ') : 'none yet. Add your site under "Sites allowed to embed the widget" below, or the embed will not load.'}</p>
+          <textarea readonly rows="2" data-select-on-focus aria-label="Embed code">${embedSnippet(opts.appUrl, show.site_key)}</textarea>
+          <p class="muted">Hosted page for newsletters and social bios: <a href="${opts.appUrl}/s/${show.slug}">${opts.appUrl}/s/${show.slug}</a></p>
+          <div class="actions">
+            <button type="button" class="btn primary" data-copy="${embedSnippet(opts.appUrl, show.site_key)}">Copy embed code</button>
+            <button type="button" class="btn" data-copy="${opts.appUrl}/s/${show.slug}">Copy hosted page link</button>
+            <form method="post" action="/shows/${show.slug}/rotate-key" data-confirm="Rotate the site key? Embeds using the old key stop working.">${csrfField(opts.csrf)}<button class="btn" type="submit">Rotate key</button></form>
+          </div>
+        </section>`
+      : ''}
     <div class="show-layout">
     <form method="post" action="${show ? `/shows/${show.slug}/settings` : '/shows'}" class="card stack" data-preview>
       ${csrfField(opts.csrf)}

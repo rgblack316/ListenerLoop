@@ -756,7 +756,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
   app.get(
     '/shows/new',
     ownerAuthed((_req, reply, session) =>
-      page(reply, showFormPage({ csrf: session.csrf, show: null, values: blankValues(), errors: [], maxSecondsLimit: MAX_SECONDS_LIMIT, transcriptionOn: transcriptionAvailable(ctx) })),
+      page(reply, showFormPage({ csrf: session.csrf, show: null, values: blankValues(), errors: [], maxSecondsLimit: MAX_SECONDS_LIMIT, appUrl: config.appUrl, transcriptionOn: transcriptionAvailable(ctx) })),
     ),
   );
 
@@ -766,7 +766,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
       const values = valuesFromBody(req.body, blankValues());
       const { errors, fields } = parseShowForm(req.body, values, null);
       if (errors.length) {
-        return page(reply, showFormPage({ csrf: session.csrf, show: null, values, errors, maxSecondsLimit: MAX_SECONDS_LIMIT, transcriptionOn: transcriptionAvailable(ctx) }), 400);
+        return page(reply, showFormPage({ csrf: session.csrf, show: null, values, errors, maxSecondsLimit: MAX_SECONDS_LIMIT, appUrl: config.appUrl, transcriptionOn: transcriptionAvailable(ctx) }), 400);
       }
       const created = repo.createShow({ ...(fields as Omit<typeof fields, 'name'>), name: values.name });
       if (created.feed_url) {
@@ -791,7 +791,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
       const show = showFor(req, session);
       if (!show) return notFound(reply);
       const flash = FLASH[(req.query as { flash?: string }).flash ?? ''];
-      return page(reply, showFormPage({ csrf: session.csrf, show, values: valuesFromShow(show), errors: [], maxSecondsLimit: MAX_SECONDS_LIMIT, transcriptionOn: transcriptionAvailable(ctx), flash }));
+      return page(reply, showFormPage({ csrf: session.csrf, show, values: valuesFromShow(show), errors: [], maxSecondsLimit: MAX_SECONDS_LIMIT, appUrl: config.appUrl, transcriptionOn: transcriptionAvailable(ctx), flash }));
     }),
   );
 
@@ -803,7 +803,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
       const values = valuesFromBody(req.body, valuesFromShow(show));
       const { errors, fields } = parseShowForm(req.body, values, show);
       if (errors.length) {
-        return page(reply, showFormPage({ csrf: session.csrf, show, values, errors, maxSecondsLimit: MAX_SECONDS_LIMIT, transcriptionOn: transcriptionAvailable(ctx) }), 400);
+        return page(reply, showFormPage({ csrf: session.csrf, show, values, errors, maxSecondsLimit: MAX_SECONDS_LIMIT, appUrl: config.appUrl, transcriptionOn: transcriptionAvailable(ctx) }), 400);
       }
       repo.updateShow(show.id, fields);
       if ((fields.feed_url ?? null) !== (show.feed_url ?? null)) {
