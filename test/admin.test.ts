@@ -242,6 +242,14 @@ describe('admin: shows', () => {
     expect(dup.body).toContain('already used');
   });
 
+  it('offers a show picker on the inbox when there is more than one show', async () => {
+    const res = await h.app.inject({ method: 'GET', url: '/inbox', headers: { cookie: session.cookie } });
+    expect(res.body).toContain('data-nav');
+    expect(res.body).toContain('All shows');
+    expect(res.body).toContain(`value="/shows/${show.slug}"`);
+    expect(res.body).toContain('value="/shows/other-show"');
+  });
+
   it('rotates the site key', async () => {
     const before = h.ctx.repo.getShow(show.id)!.site_key;
     const res = await formPost(h, `/shows/${show.slug}/rotate-key`, session, {});

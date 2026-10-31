@@ -94,6 +94,8 @@ export interface InboxView {
   /** Set for a single show's inbox; omitted for the combined view. */
   show?: Show;
   hasShows: boolean;
+  /** Shows this user can open, for the picker above the list. */
+  shows: Show[];
   counts: Record<InboxFilter, number>;
   page: number;
   pages: number;
@@ -118,6 +120,14 @@ export function inboxPage(v: InboxView): string {
     role: v.role,
     nav: v.show ? 'shows' : 'inbox',
     body: html`${v.show ? html`<p><a href="/">&larr; All shows</a></p>` : ''}
+    ${v.shows.length > 1
+      ? html`<label class="show-picker">Show
+          <select data-nav aria-label="Show to display">
+            <option value="${inboxUrl(undefined, v.filter, 1)}" ${v.show ? '' : raw('selected')}>All shows</option>
+            ${v.shows.map((s) => html`<option value="${inboxUrl(s, v.filter, 1)}" ${v.show && v.show.id === s.id ? raw('selected') : ''}>${s.name}</option>`)}
+          </select>
+        </label>`
+      : ''}
     <div class="head-row">
       <h1 class="with-cover">${v.show ? coverThumb(v.show, 'lg') : ''}<span>${v.show ? v.show.name : 'All messages'}</span></h1>
       ${v.show && v.role === 'owner' ? html`<a href="/shows/${v.show.slug}/settings">Settings and embed code</a>` : ''}

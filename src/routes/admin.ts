@@ -266,7 +266,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     const counts = Object.fromEntries(INBOX_FILTERS.map((f) => [f, repo.countMessages(f, showId)])) as Record<InboxFilter, number>;
     return page(
       reply,
-      inboxPage({ csrf: session.csrf, role: session.role, messages, snippets, search: searching ? search : '', filter, show, hasShows: accessibleShows(session).length > 0, counts, page: pageNo, pages, total }),
+      inboxPage({ csrf: session.csrf, role: session.role, messages, snippets, search: searching ? search : '', filter, show, hasShows: accessibleShows(session).length > 0, shows: accessibleShows(session), counts, page: pageNo, pages, total }),
     );
   };
 

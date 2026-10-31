@@ -122,6 +122,9 @@
   });
 
   // Auto-submit filters
+  document.querySelectorAll('[data-nav]').forEach(function (s) {
+    s.addEventListener('change', function () { if (/^\/[\w\-./?=&%]*$/.test(s.value)) location.href = s.value; });
+  });
   document.querySelectorAll('[data-autosubmit]').forEach(function (s) {
     s.addEventListener('change', function () { s.form.submit(); });
   });
