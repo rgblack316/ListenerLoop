@@ -387,7 +387,7 @@ Status: **not started, on the table.** Written up 2026-11-04 so it can be picked
 
 - Voicemails are unlimited, with 90-day retention. A per-message length cap, the daily per-show cap and Turnstile remain the real abuse limits.
 - Examples: 2 shows $7.50/mo; 5 shows $15/mo (without transcription).
-- Trial: 14 days at most.
+- Trial: 14 days at most, **card required up front**; the card is billed automatically when the trial ends unless the customer cancels first (Stripe Checkout with `trial_period_days: 14`; a reminder email goes out a few days before the first charge).
 - Annual billing is a required option. Stripe holds monthly and annual prices for each item; an account picks one interval (no mixing on one subscription).
 - The Founding account (existing shows and users) stays free.
 - Positioning: well under SpeakPipe (Gold $15/mo or $12/mo annual; Premium $45/mo or $36/mo annual; the free plan allows 90-second recordings and 100 MB) and under PodInBox ($9 and $19) and Telbee ($18 to $48), the last two as quoted by a third-party article, to be re-checked before they appear on a public page. SpeakPipe's plans page does not mention transcription.
@@ -407,9 +407,8 @@ Status: **not started, on the table.** Written up 2026-11-04 so it can be picked
 5. Private beta using the beta applicants from the website and coupon codes; then replace "pricing to be determined" on the site and launch publicly.
 
 **Open decisions.**
-- Does the 14-day trial require a card? (No-card is simpler; card-first converts better.)
 - Does the length cap of a recording differ by plan? (Not in the current pricing; revisit if abuse or storage cost shows up.)
-- Real transcription cost per message, measured before launch, to confirm $5/mo covers it.
+- Transcription runs locally on a Whisper model, so its cost is server CPU time, not a per-use fee. Still measure the processing time per message on the production server before launch, and keep the queue fair across accounts.
 - Whether to offer a data export on cancellation (planned) and how retention warnings are sent.
 - How hands-on support will be; brand and domain split (`listenerloop.app` for marketing, `dash.` for the app).
 
