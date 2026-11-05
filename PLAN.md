@@ -344,6 +344,43 @@ Each phase is done only when its acceptance criteria pass.
 - [x] Site admin and owner roles (migration 15): the old "owner" role is now **site admin** (whole installation), and the new **owner** role runs their own shows: add shows (auto-assigned), edit settings, embed code and webhooks, delete shows (type the name to confirm; recordings are removed from storage), and invite or manage editors and viewers whose shows are all among theirs, handing out only their own shows. Owners cannot reach server Settings, backups, restore or other shows. Migration 15 rebuilds the users table (SQLite cannot alter a CHECK) with foreign keys off and converts existing owners to site admins.
 - [x] Original vs processed audio on the message page: a Version dropdown (Processed MP3 / Original recording) shown when the original was kept (show setting "Keep the original recording", or `KEEP_ORIGINALS`). Switching keeps the playback position, speed and play state so the two can be compared; the original is served through the same access checks (`?version=original`, range requests, download name with the right extension, unknown types sent as a download-only octet-stream). Failed messages offer the original for download.
 
+## Parked idea: ListenerLoop as a hosted subscription
+
+Status: **not started, on the table.** Written up 2026-11-04 so it can be picked up later. Nothing here changes the self-hosted app.
+
+**Goal.** Offer the hosted service to other podcasters for a monthly fee, with self-service signup, and a real marketing website.
+
+**1. Accounts (foundation).**
+- New `accounts` table; users and shows each belong to one account. Every list and lookup of users, shows and messages is scoped to the account. Show access already goes through `accessibleShows()`, so most of the scoping has one home.
+- Roles map across: **site admin** is the platform operator; **owner** becomes the account owner (runs their shows and invites their own editors and viewers). Server Settings, backups and restore stay site-admin-only.
+- Per-account limits and usage: number of shows, storage, messages per month, retention, team seats, transcription and original recordings allowed (transcription is the natural paid feature, since it costs CPU).
+
+**2. Payments.**
+- Stripe Billing. Checkout starts the subscription; the Stripe customer portal handles card changes, cancelling and invoices, so there is almost no billing UI to build. Stripe Tax for sales tax and VAT.
+- A webhook endpoint handles subscription created, updated, deleted and payment failed. The account stores its Stripe customer id, plan, status and period end.
+- One function, `entitlements(account)`, answers what an account may do. Every limit check goes through it.
+
+**3. Existing users are never cut off.**
+- The migration creates a **Founding** account holding every current show and user, on an unlimited plan with no billing.
+- Billing sits behind `BILLING_ENABLED`, off by default, so self-hosters never see it. Only the hosted server turns it on.
+- A test proves existing data is untouched and unrestricted after the migration.
+
+**4. Failed payments.** The widget lives on customers' sites, so it must fail politely: a grace period of about 7 to 14 days with emails to the owner; then the account goes read-only (sign in, listen and export still work, the widget says it is not accepting messages); data is kept 60 to 90 days with warnings, then deleted.
+
+**5. Signup and onboarding.** Marketing page, then signup with email verification and Turnstile, then Stripe Checkout (ideally with a free trial); the account is created when the webhook confirms. A short onboarding flow follows: add the show, list the site, copy the embed code, send a test message.
+
+**6. Marketing website.** A separate static site (Cloudflare Pages, like the podcast sites) at `listenerloop.app`, with the app staying at `dash.`. Home page with a live, working widget visitors can try; features, pricing, how it works, FAQ, privacy, terms, contact. Open source and self-hostable is part of the pitch.
+
+**7. Also needed.**
+- Legal: terms, privacy policy, data processing agreement, account deletion and data export, abuse and takedown process. Voice recordings are personal data and EU listeners bring GDPR; the consent checkbox helps.
+- Licence: the author holds the copyright, so a hosted service is fine; accepting outside contributions later would call for a contributor agreement.
+- Capacity: conversion runs one file at a time on one server. Fine for dozens of customers; add per-account queue fairness and usage monitoring before a public launch.
+- Support: a support inbox and a status page.
+
+**Suggested order.** Decisions, then accounts foundation, then Stripe billing, then signup and onboarding, then the marketing site, then a private beta with coupon codes before a public launch.
+
+**Open decisions.** Pricing shape (free tier, trial with card, or paid only); plan limits and whether transcription is paid-only; how hands-on support will be; brand and domain split (`listenerloop.app` for marketing, `dash.` for the app).
+
 ## Risks and open questions
 
 | Risk | Mitigation |
