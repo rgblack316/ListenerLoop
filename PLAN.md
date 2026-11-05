@@ -377,9 +377,41 @@ Status: **not started, on the table.** Written up 2026-11-04 so it can be picked
 - Capacity: conversion runs one file at a time on one server. Fine for dozens of customers; add per-account queue fairness and usage monitoring before a public launch.
 - Support: a support inbox and a status page.
 
-**Suggested order.** Decisions, then accounts foundation, then Stripe billing, then signup and onboarding, then the marketing site, then a private beta with coupon codes before a public launch.
+**Pricing (decided 2026-11-05).**
 
-**Open decisions.** Pricing shape (free tier, trial with card, or paid only); plan limits and whether transcription is paid-only; how hands-on support will be; brand and domain split (`listenerloop.app` for marketing, `dash.` for the app).
+| | Monthly | Annual (about 2 months free) |
+| --- | --- | --- |
+| First show | $5 | $50 |
+| Each additional show (50% of the first) | $2.50 | $25 |
+| Transcription add-on, per account | $5 | $50 |
+
+- Voicemails are unlimited, with 90-day retention. A per-message length cap, the daily per-show cap and Turnstile remain the real abuse limits.
+- Examples: 2 shows $7.50/mo; 5 shows $15/mo (without transcription).
+- Trial: 14 days at most.
+- Annual billing is a required option. Stripe holds monthly and annual prices for each item; an account picks one interval (no mixing on one subscription).
+- The Founding account (existing shows and users) stays free.
+- Positioning: well under SpeakPipe (Gold $15/mo or $12/mo annual; Premium $45/mo or $36/mo annual; the free plan allows 90-second recordings and 100 MB) and under PodInBox ($9 and $19) and Telbee ($18 to $48), the last two as quoted by a third-party article, to be re-checked before they appear on a public page. SpeakPipe's plans page does not mention transcription.
+- Stripe fees are about 2.9% plus 30 cents, roughly 9% of a $5 charge, which is another reason to promote annual billing.
+
+**Plan changes from the dashboard.**
+- Owners get a **Billing** page: current plan, next charge, monthly/annual switch, transcription toggle. Card changes, invoices and cancelling go through the Stripe customer portal.
+- **Adding a show at any time:** the Add show flow checks the plan through `entitlements()`, shows the prorated cost ("adds $2.50/mo, prorated today") and confirms. Stripe prorates; we do not calculate it. Additional shows are a quantity on one subscription item.
+- Deleting a show lowers the quantity at the next renewal (no refund logic of our own).
+- Effort: mostly additive. The dashboard keeps its current pages; the real work is account scoping in the back end and Stripe wiring.
+
+**Suggested order.**
+1. Accounts and scoping, with isolation tests (the riskiest piece: one customer must never see another's messages). The Founding account migration comes with it.
+2. Stripe: products and prices (monthly and annual), subscription, webhook, `entitlements()`, grace period and read-only on lapse.
+3. Billing page and the add-a-show flow.
+4. Signup, email verification, the 14-day trial and onboarding.
+5. Private beta using the beta applicants from the website and coupon codes; then replace "pricing to be determined" on the site and launch publicly.
+
+**Open decisions.**
+- Does the 14-day trial require a card? (No-card is simpler; card-first converts better.)
+- Does the length cap of a recording differ by plan? (Not in the current pricing; revisit if abuse or storage cost shows up.)
+- Real transcription cost per message, measured before launch, to confirm $5/mo covers it.
+- Whether to offer a data export on cancellation (planned) and how retention warnings are sent.
+- How hands-on support will be; brand and domain split (`listenerloop.app` for marketing, `dash.` for the app).
 
 ## Risks and open questions
 
