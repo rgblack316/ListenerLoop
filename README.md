@@ -85,6 +85,16 @@ People are added from **Users** with an emailed invitation link (valid 7 days) s
 - **Local development:** `npm install && npm run dev` (Node 22+, ffmpeg on the PATH). Use Cloudflare's dummy Turnstile keys from `.env.example`.
 - **Tests:** `npm test` (needs ffmpeg).
 
+## Settings you can change in the app
+
+Site admins can change these under **Settings**, with no file editing and no restart. Changes apply at once, and keys and passwords are stored encrypted and never shown again (leave a key box empty to keep the saved one).
+
+- **Email:** Resend or an SMTP server, and the address alerts are sent from. A saved value replaces the `MAIL_*` and `RESEND_API_KEY` values in `.env`.
+- **Spam check:** the Turnstile site key and secret key. The secret is checked with Cloudflare before it is saved, so a typo cannot lock listeners out.
+- **Storage:** local disk or an S3-compatible bucket. The new storage is tested first, and nothing changes if the test fails. Existing recordings are not copied when you move to a different place.
+
+Everything else (limits, retention, the app address) still comes from `.env`. The version is shown at the top of the Settings page.
+
 ## Cover art
 
 Each show can have its podcast RSS feed address in its settings (optional). ListenerLoop reads the feed once, downloads the cover image, shrinks it to a small square JPEG and keeps that copy in your storage, so the dashboard never loads images from anyone else's server. It appears next to the show name in the shows list, the inbox and the settings page; a letter tile is used until there is one. Press **Refresh cover art** after you change your artwork. Only public web addresses are fetched: private and internal network addresses are refused, redirects and sizes are limited, and the image is re-encoded, which also strips its metadata.

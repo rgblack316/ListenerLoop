@@ -12,7 +12,7 @@ import type { AppContext } from '../context.js';
 import type { RouteKit } from './users.js';
 
 export function registerBackupRoutes(app: FastifyInstance, ctx: AppContext, kit: RouteKit): void {
-  const { repo, storage } = ctx;
+  const { repo } = ctx;
   const { siteAdminAuthed, siteAdminMutating, field, notFound, renderSettings } = kit;
   const msg = (err: unknown): string => (err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').slice(0, 300);
   const back = (flash: string) => `/settings?backup=${flash}#backups`;
@@ -29,7 +29,7 @@ export function registerBackupRoutes(app: FastifyInstance, ctx: AppContext, kit:
       weekday: Number(field(body, 'weekday')),
       hour: Number(field(body, 'hour')),
       keep: Number(field(body, 'keep')),
-      includeAudio: storage.name === 'local' ? field(body, 'include_audio') === '1' : true,
+      includeAudio: ctx.storage.name === 'local' ? field(body, 'include_audio') === '1' : true,
       destination: field(body, 'destination') as 'both',
     });
     saveBackupSettings(repo, s);
@@ -43,7 +43,7 @@ export function registerBackupRoutes(app: FastifyInstance, ctx: AppContext, kit:
     const file = backupFilePath(ctx, b);
     if (file && fs.existsSync(file)) return reply.header('Content-Length', fs.statSync(file).size).send(fs.createReadStream(file));
     // Bucket-only backups are streamed from the bucket.
-    if (b.storage_key && (await storage.exists(b.storage_key))) return reply.send(await storage.getStream(b.storage_key));
+    if (b.storage_key && (await ctx.storage.exists(b.storage_key))) return reply.send(await ctx.storage.getStream(b.storage_key));
     return notFound(reply);
   }));
 
@@ -63,7 +63,7 @@ export function registerBackupRoutes(app: FastifyInstance, ctx: AppContext, kit:
     try {
       copy = await localCopy(ctx, b);
       const info = await inspectArchive(ctx, copy.path);
-      return kit.page(reply, restoreConfirmPage({ csrf: session.csrf, backup: b, info, storage: storage.name, dataDir: ctx.config.dataDir }));
+      return kit.page(reply, restoreConfirmPage({ csrf: session.csrf, backup: b, info, storage: ctx.storage.name, dataDir: ctx.config.dataDir }));
     } catch (err) {
       return renderSettings(reply, session, { section: 'backups', ok: false, message: `This backup cannot be restored: ${msg(err)}` }, 400);
     } finally {

@@ -517,17 +517,17 @@ export interface SettingsView {
   adminEmail: string;
   appUrl: string;
   version: string;
-  mail: { provider: string; configured: boolean; from: string };
-  storage: { driver: string; location: string };
-  turnstile: { siteKey: string };
+  mail: { configured: boolean; form: { provider: string; from: string; smtpHost: string; smtpPort: string; smtpUser: string }; secrets: { resend: boolean; smtp: boolean } };
+  storage: { form: { driver: string; endpoint: string; region: string; bucket: string; accessKeyId: string; forcePathStyle: boolean }; localPath: string; secretSet: boolean; location: string };
+  turnstile: { siteKey: string; secretSet: boolean };
   limits: { rateLimitPerHour: number; rateLimitPerShowHour: number; dailyCapPerShow: number; maxUploadMb: number; maxSecondsDefault: number; retentionDays: number; keepOriginals: boolean; mp3BitrateKbps: number };
   backups: { settings: BackupSettings; list: Backup[]; next: string | null; storage: 'local' | 's3'; running: boolean; dir: string; lastRestore: { at: string; ok: boolean; error?: string; safeDir?: string; created?: string | null } | null; importMb: number };
   /** Outcome of the button that was just pressed. */
-  result?: { section: 'email' | 'storage' | 'backups'; ok: boolean; message: string; steps?: string[] };
+  result?: { section: 'email' | 'storage' | 'turnstile' | 'backups'; ok: boolean; message: string; steps?: string[] };
 }
 
 export function settingsPage(v: SettingsView): string {
-  const outcome = (section: 'email' | 'storage' | 'backups'): Raw => {
+  const outcome = (section: 'email' | 'storage' | 'turnstile' | 'backups'): Raw => {
     const r = v.result;
     if (!r || r.section !== section) return raw('');
     return html`<div class="${r.ok ? 'notice' : 'alert'}" role="${r.ok ? 'status' : 'alert'}"><p>${r.message}</p>${r.steps ? html`<ul>${r.steps.map((s) => html`<li>${s}</li>`)}</ul>` : ''}</div>`;
@@ -539,27 +539,86 @@ export function settingsPage(v: SettingsView): string {
     role: 'site_admin',
     nav: 'settings',
     body: html`<h1>Settings</h1>
+    <p class="muted">ListenerLoop version ${v.version}</p>
 
     <section class="card">
       <h2>Email alerts</h2>
       ${outcome('email')}
-      <dl class="details">
-        <dt>Provider</dt><dd>${v.mail.provider}${v.mail.configured ? '' : html` <span class="muted">(not configured: alerts are off)</span>`}</dd>
-        <dt>Sent from</dt><dd>${v.mail.from || html`<span class="muted">Not set</span>`}</dd>
-        <dt>Your email</dt><dd>${v.adminEmail}</dd>
-      </dl>
+      <form method="post" action="/settings/email" class="stack" autocomplete="off">${csrfField(v.csrf)}
+        <label>Send email with
+          <select name="provider">
+            <option value="resend" ${v.mail.form.provider === 'resend' ? raw('selected') : ''}>Resend</option>
+            <option value="smtp" ${v.mail.form.provider === 'smtp' ? raw('selected') : ''}>An SMTP server</option>
+            <option value="none" ${v.mail.form.provider === 'none' ? raw('selected') : ''}>Nothing (email off)</option>
+          </select>
+        </label>
+        <label>Sent from
+          <input name="from" value="${v.mail.form.from}" maxlength="200" placeholder="ListenerLoop &lt;alerts@yourdomain.com&gt;">
+          <small class="muted">The domain must be verified with your email provider.</small>
+        </label>
+        <fieldset class="group"><legend>Resend</legend>
+          <label>API key
+            <input type="password" name="resend_api_key" value="" maxlength="300" autocomplete="new-password" placeholder="${v.mail.secrets.resend ? 'A key is saved. Paste a new one to replace it.' : 're_...'}">
+          </label>
+        </fieldset>
+        <fieldset class="group"><legend>SMTP server</legend>
+          <div class="two">
+            <label>Server<input name="smtp_host" value="${v.mail.form.smtpHost}" maxlength="200" placeholder="smtp.example.com"></label>
+            <label>Port<input name="smtp_port" value="${v.mail.form.smtpPort}" maxlength="6" inputmode="numeric" placeholder="587"></label>
+          </div>
+          <div class="two">
+            <label>Username<input name="smtp_user" value="${v.mail.form.smtpUser}" maxlength="200" autocomplete="off"></label>
+            <label>Password<input type="password" name="smtp_pass" value="" maxlength="300" autocomplete="new-password" placeholder="${v.mail.secrets.smtp ? 'A password is saved. Type a new one to replace it.' : ''}"></label>
+          </div>
+        </fieldset>
+        <p class="muted">Only the section for the provider you choose is used. Keys and passwords are stored encrypted and never shown again. Saving applies right away; no restart is needed.</p>
+        <p><button class="btn primary" type="submit">Save email settings</button>${v.mail.configured ? '' : html` <span class="muted">Email is off, so no alerts are sent.</span>`}</p>
+      </form>
+      <dl class="details"><dt>Your email</dt><dd>${v.adminEmail}</dd></dl>
       <form method="post" action="/settings/test-email">${csrfField(v.csrf)}
         <button class="btn" type="submit" ${v.mail.configured ? '' : raw('disabled')}>Send a test email to ${v.adminEmail}</button>
       </form>
     </section>
 
     <section class="card">
+      <h2>Spam check (Cloudflare Turnstile)</h2>
+      ${outcome('turnstile')}
+      <form method="post" action="/settings/turnstile" class="stack" autocomplete="off">${csrfField(v.csrf)}
+        <label>Site key<input name="site_key" value="${v.turnstile.siteKey}" maxlength="100" required></label>
+        <label>Secret key<input type="password" name="secret_key" value="" maxlength="200" autocomplete="new-password" placeholder="${v.turnstile.secretSet ? 'A key is saved. Paste a new one to replace it.' : ''}"></label>
+        <p class="muted">Both come from the Turnstile page in your Cloudflare dashboard. The secret is checked with Cloudflare before it is saved, and it is stored encrypted. Saving applies right away.</p>
+        <p><button class="btn primary" type="submit">Save Turnstile keys</button></p>
+      </form>
+    </section>
+
+    <section class="card">
       <h2>Storage</h2>
       ${outcome('storage')}
-      <dl class="details">
-        <dt>Driver</dt><dd>${v.storage.driver}</dd>
-        <dt>Location</dt><dd>${v.storage.location}</dd>
-      </dl>
+      <form method="post" action="/settings/storage" class="stack" autocomplete="off">${csrfField(v.csrf)}
+        <label>Keep recordings
+          <select name="driver">
+            <option value="local" ${v.storage.form.driver === 'local' ? raw('selected') : ''}>On this server</option>
+            <option value="s3" ${v.storage.form.driver === 's3' ? raw('selected') : ''}>In an S3-compatible bucket (R2, Backblaze, MinIO, AWS)</option>
+          </select>
+          <small class="muted">On this server means the folder <code>${v.storage.localPath}</code>.</small>
+        </label>
+        <fieldset class="group"><legend>S3-compatible bucket</legend>
+          <label>Endpoint<input name="s3_endpoint" value="${v.storage.form.endpoint}" maxlength="300" placeholder="https://ACCOUNT.r2.cloudflarestorage.com"><small class="muted">Leave empty for AWS S3.</small></label>
+          <div class="two">
+            <label>Bucket<input name="s3_bucket" value="${v.storage.form.bucket}" maxlength="120"></label>
+            <label>Region<input name="s3_region" value="${v.storage.form.region}" maxlength="60" placeholder="auto"></label>
+          </div>
+          <div class="two">
+            <label>Access key ID<input name="s3_access_key_id" value="${v.storage.form.accessKeyId}" maxlength="200" autocomplete="off"></label>
+            <label>Secret access key<input type="password" name="s3_secret_access_key" value="" maxlength="300" autocomplete="new-password" placeholder="${v.storage.secretSet ? 'A key is saved. Paste a new one to replace it.' : ''}"></label>
+          </div>
+          <label class="check"><input type="checkbox" name="s3_force_path_style" value="1" ${v.storage.form.forcePathStyle ? raw('checked') : ''}> Use path-style addresses (needed by MinIO and some others)</label>
+        </fieldset>
+        <label class="check"><input type="checkbox" name="confirm_move" value="1"> I understand that existing recordings are not copied if I change where they are kept</label>
+        <p class="muted">The new settings are tested first. If the test fails, nothing is changed. Saving applies right away.</p>
+        <p><button class="btn primary" type="submit">Test and save storage</button></p>
+      </form>
+      <dl class="details"><dt>Currently</dt><dd>${v.storage.location}</dd></dl>
       <form method="post" action="/settings/test-storage">${csrfField(v.csrf)}
         <button class="btn" type="submit">Test storage</button>
       </form>
@@ -633,11 +692,10 @@ export function settingsPage(v: SettingsView): string {
 
     <section class="card">
       <h2>Configuration</h2>
-      <p class="muted">These come from the server's <code>.env</code> file. After editing it, run <code>sudo ./scripts/update.sh --restart</code>.</p>
+      <p class="muted">These come from the server's <code>.env</code> file. After editing it, run <code>sudo ./scripts/update.sh --restart</code>. Email, Turnstile and storage are changed above instead.</p>
       <dl class="details">
         <dt>App address</dt><dd>${v.appUrl}</dd>
         <dt>Version</dt><dd>${v.version}</dd>
-        <dt>Turnstile site key</dt><dd>${v.turnstile.siteKey}</dd>
         <dt>Per-IP limit</dt><dd>${v.limits.rateLimitPerHour} per hour</dd>
         <dt>Per-show limit</dt><dd>${v.limits.rateLimitPerShowHour} per hour, ${v.limits.dailyCapPerShow} per day</dd>
         <dt>Largest upload</dt><dd>${v.limits.maxUploadMb} MB</dd>

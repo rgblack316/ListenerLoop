@@ -1,6 +1,6 @@
 {
   "name": "listenerloop",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Self-hosted listener voicemail widget for podcasts. Turn listener feedback into conversation.",
   "license": "AGPL-3.0-only",

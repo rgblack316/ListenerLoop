@@ -13,6 +13,8 @@ import type { AppContext } from './context.js';
 import { openDb, type DB } from './db/index.js';
 import { Repo } from './db/repo.js';
 import { createMailer, type Mailer } from './mail/index.js';
+import { applyStoredMailSettings } from './mailsettings.js';
+import { applyStoredStorage, applyStoredTurnstile } from './serversettings.js';
 import { JobQueue } from './queue.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerPublicRoutes } from './routes/public.js';
@@ -42,9 +44,17 @@ export async function buildApp(opts: BuildOptions): Promise<{ app: FastifyInstan
     bodyLimit: 1024 * 1024,
   });
 
+  const repo = new Repo(opts.db ?? openDb(config.databasePath));
+  // Email settings saved on the Settings page win over the MAIL_* values in .env.
+  const savedMail = applyStoredMailSettings(config, repo);
+  if (savedMail.unreadable) app.log.warn('Saved email secrets could not be read (SESSION_SECRET changed?). Enter them again on the Settings page.');
+  const savedTurnstile = applyStoredTurnstile(config, repo);
+  const savedStorage = applyStoredStorage(config, repo);
+  if (savedTurnstile.unreadable || savedStorage.unreadable) app.log.warn('Saved Turnstile or storage secrets could not be read (SESSION_SECRET changed?). Enter them again on the Settings page.');
+
   const ctx: AppContext = {
     config,
-    repo: new Repo(opts.db ?? openDb(config.databasePath)),
+    repo,
     storage: opts.storage ?? createStorage(config),
     mailer: opts.mailer === undefined ? createMailer(config) : opts.mailer,
     queue: new JobQueue(1, (err) => app.log.error({ err }, 'background job failed')),

@@ -25,7 +25,7 @@ export interface RouteKit {
   accessibleShows: (session: AdminSession) => Show[];
   notFound: (reply: FastifyReply) => FastifyReply;
   /** Shows the settings page with a message in the Backups panel. */
-  renderSettings: (reply: FastifyReply, session: AdminSession, result: { section: 'email' | 'storage' | 'backups'; ok: boolean; message: string }, status?: number) => FastifyReply;
+  renderSettings: (reply: FastifyReply, session: AdminSession, result: { section: 'email' | 'storage' | 'turnstile' | 'backups'; ok: boolean; message: string }, status?: number) => FastifyReply;
 }
 
 const LINK_TTL_MS = 7 * 24 * 60 * 60 * 1000;

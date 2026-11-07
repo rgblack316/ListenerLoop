@@ -42,6 +42,10 @@ import {
   ftsQuery,
 } from '../db/repo.js';
 import { MAX_IMPORT_MB } from '../restore.js';
+import { createMailer } from '../mail/index.js';
+import { createStorage } from '../storage/index.js';
+import { candidateConfig, checkStorageForm, checkTurnstileForm, effectiveTurnstileSecret, readStorageForm, readTurnstileForm, runStorageCheck, saveStorage, saveTurnstile, storageForm, type StorageForm } from '../serversettings.js';
+import { checkMailForm, mailForm, readMailForm, saveMailForm, secretsSet, type MailForm } from '../mailsettings.js';
 import { backupDir, backupRunning, loadBackupSettings, nextSlot } from '../backup.js';
 import { registerBackupRoutes } from './backups.js';
 import { registerUserRoutes } from './users.js';
@@ -103,7 +107,7 @@ export function adminCsp(): string {
 }
 
 export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void {
-  const { repo, config, storage } = ctx;
+  const { repo, config } = ctx;
   const throttle = new LoginThrottle();
   // Verified against when the email does not match, so login timing does not reveal which part was wrong.
   const dummyHash = hash(randomToken(16));
@@ -498,15 +502,15 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
       const kind = original ? originalKind(m.original_mime) : { type: 'audio/mpeg', ext: 'mp3' };
       const filename = `${safeFilePart(m.show_slug)}-${safeFilePart(m.sender_name)}-${m.created_at.slice(0, 10)}${original ? '-original' : ''}.${kind.ext}`;
 
-      if (storage.getSignedUrl) {
-        const url = await storage.getSignedUrl(key, 300, {
+      if (ctx.storage.getSignedUrl) {
+        const url = await ctx.storage.getSignedUrl(key, 300, {
           contentType: kind.type,
           downloadName: download ? filename : undefined,
         });
         return reply.header('Cache-Control', 'no-store').redirect(url);
       }
 
-      const size = await storage.size(key);
+      const size = await ctx.storage.size(key);
       if (size === null) return reply.code(404).type('text/plain').send('Audio file is missing.');
       const range = parseRange(req.headers.range, size);
       void reply
@@ -521,25 +525,27 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
           .code(206)
           .header('Content-Range', `bytes ${range.start}-${range.end}/${size}`)
           .header('Content-Length', range.end - range.start + 1);
-        return reply.send(await storage.getStream(key, range));
+        return reply.send(await ctx.storage.getStream(key, range));
       }
       void reply.header('Content-Length', size);
-      return reply.send(await storage.getStream(key));
+      return reply.send(await ctx.storage.getStream(key));
     }),
   );
 
   // ---------------------------------------------------------------- settings
-  const settingsView = (session: AdminSession, result?: SettingsView['result']): SettingsView => ({
+  const settingsView = (session: AdminSession, result?: SettingsView['result'], mailFormOverride?: MailForm, storageFormOverride?: StorageForm, turnstileSiteKeyOverride?: string): SettingsView => ({
     csrf: session.csrf,
     adminEmail: session.email,
     appUrl: config.appUrl,
     version: appVersion(),
-    mail: { provider: config.mail.provider, configured: !!ctx.mailer, from: config.mail.from },
+    mail: { configured: !!ctx.mailer, form: mailFormOverride ?? mailForm(config), secrets: secretsSet(config) },
     storage: {
-      driver: config.storageDriver,
+      form: storageFormOverride ?? storageForm(config),
+      localPath: config.localStoragePath,
+      secretSet: !!config.s3.secretAccessKey,
       location: config.storageDriver === 's3' ? `${config.s3.endpoint || 'AWS S3'} / ${config.s3.bucket}` : config.localStoragePath,
     },
-    turnstile: { siteKey: config.turnstile.siteKey },
+    turnstile: { siteKey: turnstileSiteKeyOverride ?? config.turnstile.siteKey, secretSet: !!config.turnstile.secretKey },
     limits: {
       rateLimitPerHour: config.rateLimitPerHour,
       rateLimitPerShowHour: config.rateLimitPerShowHour,
@@ -554,7 +560,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
       settings: loadBackupSettings(repo),
       list: repo.listBackups(15),
       next: nextSlot(loadBackupSettings(repo), new Date())?.toISOString() ?? null,
-      storage: storage.name,
+      storage: ctx.storage.name,
       running: backupRunning(),
       dir: backupDir(ctx),
       lastRestore: (() => {
@@ -584,10 +590,26 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
   }));
 
   app.post(
+    '/settings/email',
+    siteAdminMutating((req, reply, session) => {
+      const form = readMailForm(req.body);
+      const problems = checkMailForm(form, config);
+      if (problems.length) {
+        return page(reply, settingsPage(settingsView(session, { section: 'email', ok: false, message: problems.join(' ') }, { ...form, resendApiKey: '', smtpPass: '' })), 400);
+      }
+      saveMailForm(config, repo, form);
+      ctx.mailer = createMailer(config);
+      ctx.log.info({ provider: config.mail.provider }, 'email settings changed');
+      const message = ctx.mailer ? 'Email settings saved and in use now. Send a test email to check them.' : 'Email settings saved. Email alerts are turned off.';
+      return page(reply, settingsPage(settingsView(session, { section: 'email', ok: true, message })));
+    }),
+  );
+
+  app.post(
     '/settings/test-email',
     siteAdminMutating(async (_req, reply, session) => {
       const to = session.email;
-      if (!ctx.mailer || !to) return page(reply, settingsPage(settingsView(session, { section: 'email', ok: false, message: 'Email is not configured. Set MAIL_PROVIDER and its settings in .env.' })));
+      if (!ctx.mailer || !to) return page(reply, settingsPage(settingsView(session, { section: 'email', ok: false, message: 'Email is not set up yet. Fill in the email settings above and save them first.' })));
       try {
         await ctx.mailer.send({ to, subject: 'ListenerLoop test email', text: `This is a test from ${config.appUrl}.\n\nIf you can read this, email alerts will reach you.` });
         return page(reply, settingsPage(settingsView(session, { section: 'email', ok: true, message: `Test email sent to ${to}. Check your inbox (and spam folder).` })));
@@ -599,31 +621,62 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     }),
   );
 
+  const reasonOf = (err: unknown): string => (err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').slice(0, 300);
+
   app.post(
     '/settings/test-storage',
     siteAdminMutating(async (_req, reply, session) => {
-      const key = `healthcheck/${ulid()}.txt`;
-      const body = Buffer.from('ListenerLoop storage check');
-      const steps: string[] = [];
       try {
-        await storage.put(key, body, 'text/plain');
-        steps.push('Wrote a test file');
-        const size = await storage.size(key);
-        if (size !== body.length) throw new Error('The test file was not the size that was written');
-        const chunks: Buffer[] = [];
-        for await (const c of await storage.getStream(key)) chunks.push(c as Buffer);
-        if (Buffer.concat(chunks).toString() !== body.toString()) throw new Error('The test file read back differently');
-        steps.push('Read it back');
-        await storage.delete(key);
-        if (await storage.exists(key)) throw new Error('The test file was not deleted');
-        steps.push('Deleted it');
+        const steps = await runStorageCheck(ctx.storage);
         return page(reply, settingsPage(settingsView(session, { section: 'storage', ok: true, message: 'Storage works.', steps })));
       } catch (err) {
         ctx.log.error({ err }, 'storage check failed');
-        await storage.delete(key).catch(() => undefined);
-        const reason = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').slice(0, 300);
-        return page(reply, settingsPage(settingsView(session, { section: 'storage', ok: false, message: `Storage check failed: ${reason}`, steps })));
+        return page(reply, settingsPage(settingsView(session, { section: 'storage', ok: false, message: `Storage check failed: ${reasonOf(err)}`, steps: (err as { steps?: string[] }).steps })));
       }
+    }),
+  );
+
+  // The new storage is checked before anything changes, so a typo cannot cut the app off from its recordings.
+  app.post(
+    '/settings/storage',
+    siteAdminMutating(async (req, reply, session) => {
+      const form = readStorageForm(req.body);
+      const shown = { ...form, secretAccessKey: '', confirmMove: false };
+      const fail = (message: string, steps?: string[]): FastifyReply => page(reply, settingsPage(settingsView(session, { section: 'storage', ok: false, message, steps }, undefined, shown)), 400);
+      const problems = checkStorageForm(form, config);
+      if (problems.length) return fail(problems.join(' '));
+      let candidate;
+      try {
+        candidate = createStorage(candidateConfig(form, config));
+      } catch (err) {
+        return fail(`These storage settings cannot be used: ${reasonOf(err)}`);
+      }
+      try {
+        await runStorageCheck(candidate);
+      } catch (err) {
+        ctx.log.warn({ err }, 'new storage settings failed the check');
+        return fail(`Nothing was changed. The new storage did not pass its check: ${reasonOf(err)}`, (err as { steps?: string[] }).steps);
+      }
+      ctx.storage = saveStorage(config, repo, form);
+      ctx.log.info({ driver: config.storageDriver }, 'storage settings changed');
+      return page(reply, settingsPage(settingsView(session, { section: 'storage', ok: true, message: 'Storage settings saved and in use now. The new storage passed its check.' })));
+    }),
+  );
+
+  // A wrong secret would make every listener upload fail, so Cloudflare is asked about it first.
+  app.post(
+    '/settings/turnstile',
+    siteAdminMutating(async (req, reply, session) => {
+      const form = readTurnstileForm(req.body);
+      const fail = (message: string): FastifyReply => page(reply, settingsPage(settingsView(session, { section: 'turnstile', ok: false, message }, undefined, undefined, form.siteKey)), 400);
+      const problems = checkTurnstileForm(form, config);
+      if (problems.length) return fail(problems.join(' '));
+      const probe = await ctx.verifyTurnstile({ secret: effectiveTurnstileSecret(form, config), token: 'listenerloop-settings-check' });
+      if (probe.errorCodes.includes('invalid-input-secret')) return fail('Nothing was changed. Cloudflare does not accept that secret key. Copy it again from the Turnstile page.');
+      if (probe.errorCodes.some((c) => c === 'network-error' || c.startsWith('http-'))) return fail('Nothing was changed. Cloudflare could not be reached to check the key. Try again in a moment.');
+      saveTurnstile(config, repo, form);
+      ctx.log.info('turnstile settings changed');
+      return page(reply, settingsPage(settingsView(session, { section: 'turnstile', ok: true, message: 'Turnstile keys saved and in use now. Make sure the widget in Cloudflare lists this site in its hostnames.' })));
     }),
   );
 
